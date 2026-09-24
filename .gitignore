@@ -1,0 +1,13 @@
+# Ignora tutto
+*
+
+# Ma permetti i file sorgente nella root
+!/*.cpp
+!/*.cxx
+!/*.h
+!/*.hpp
+!/*.py
+
+# Permetti anche questi file di progetto
+!/.gitignore
+!/README.md
