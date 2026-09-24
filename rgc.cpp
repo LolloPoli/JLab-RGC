@@ -23,38 +23,16 @@
 #include "rich.h"
 #include "particle.h"
 #include "particle_detector.h"
+#include "QADB.h"
 
 using namespace clas12;
 using namespace std;
+
 
 void SetLorentzVector(TLorentzVector &p4,clas12::region_part_ptr rp){
     p4.SetXYZM(rp->par()->getPx(), rp->par()->getPy(), rp->par()->getPz(), p4.M());
 }
 
-/*
-void LoadPolarizationFile(const std::string& filename) {
-    std::ifstream infile(filename);
-    if (!infile.is_open()) {
-        std::cerr << "Errore: impossibile aprire " << filename << std::endl;
-        return;
-    }
-    std::string line;
-    while (std::getline(infile, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        std::istringstream iss(line);
-        int run;
-        double col;
-        double pol = 0.0;
-        iss >> run;
-        for (int i = 2; i <= 8; i++) {
-            iss >> col;
-            if (i == 8) pol = col;
-        }
-        runPolMap[run] = pol;
-    }
-    isLoaded = true;
-}
-*/
 float BeamPolarization(Int_t run, Bool_t v) {
   if      (run>=16137 && run<=16148) return v ? 0.630 : 0.0; 
   else if (run>=16156 && run<=16178) return v ? -0.585 : 0.0; 
@@ -74,63 +52,43 @@ float BeamPolarization(Int_t run, Bool_t v) {
 
 struct RGC_FALL {
     float run;
-    //float target;
-    //float beam;
-    //float beam_GeV;
-    //float n_event;
-    //float HWP_status;
+    // float total_charge;
+    // float positive_beam_charge;
+    // float negative_beam_charge;
     float polariz;
-    //float solenoid;
-    //float torus;
-    //float epoch;
+    // float polariz_unc;
 };
-/*
-std::vector<RGC_FALL> ReadRGC_FALL(const std::string& filename) {
-    std::ifstream infile(filename);
-    std::vector<RGC_FALL> data;
-    std::string line;
-    while (std::getline(infile, line)) {
-        // Skip comments or blank lines
-        if (line.empty() || line[0] == '#') continue;
-
-        std::istringstream iss(line);
-        std::string dummy1, dummy2, dummy3, dummy4, dummy5;
-        RGC_FALL point;
-        float dummy_vals[5]; // for columns we want to skip
-
-        iss >> point.run >> dummy1 >> dummy2    
-            >> dummy3  >> dummy4 >> dummy5                  
-            >> point.polariz >> dummy_vals[0];               
-
-        data.push_back(point);
-    }
-
-    return data;
-}
-*/
 std::map<int, double> polariz_map;
 void LoadPolarization(const std::string& filename) {
     std::ifstream infile(filename);
     std::string line;
     while (std::getline(infile, line)) {
         if (line.empty() || line[0] == '#') continue;
-        std::istringstream iss(line);
+        std::stringstream ss(line);
+        std::string field;
         int run;
-        double pol;
-        std::string dummy;
-        // Leggi run (colonna 1), salta 5, leggi polariz (colonna 7/8?)
-        iss >> run;
-        for(int i=0; i<5; ++i) iss >> dummy; // salta le colonne intermedie
-        iss >> pol;
-        polariz_map[run] = pol;
+        double penultimate;
+        std::string last;
+        // Colonna 1: run
+        std::getline(ss, field, ',');
+        run = std::stoi(field);
+        // Colonne 2-4: salta
+        for (int i = 0; i < 3; ++i) {
+            std::getline(ss, field, ',');
+        }
+        // Colonna 5: penultima (quella che ti serve)
+        std::getline(ss, field, ',');
+        penultimate = std::stod(field);
+        // Colonna 6: ultima (opzionale, solo per completare parsing)
+        std::getline(ss, last, ',');
+        polariz_map[run] = penultimate;
     }
 }
-
 
 double BeamPolarization_file(Int_t run){
   if (polariz_map.empty()) {
     //std::cout << "Caricamento tabella polarizzazione..." << std::endl;
-    LoadPolarization("fall2022_NH3_goodRuns.txt");
+    LoadPolarization("spring23_NH3_goodRuns.txt"); // fall and summer 
   }
   return polariz_map[run];
 }
@@ -219,9 +177,56 @@ bool ElectronPID_DiagonalCut(clas12::region_part_ptr pa, TLorentzVector *p){
   return response;
 }
 //B6
-bool ElectronPID_VertexCut(double vz){
-    return (vz > -25 && vz < 20);
+bool ElectronPID_VertexCut(double vz, double vx, double vy){
+    return (vz > -7.5 && vz < 2.5 && abs(vx) <= 2 && abs(vy) <= 2); // summer -9, 1, fall and spring use -7.5, 2.5
 }
+
+// EC lv,lu,lw cut
+bool ElectronEC_cut(double lu, double lv,  double lw){
+  if(lu > 19 && lu < 400 && lv > 9 && lw > 9) return true;
+  else return false;
+  
+}
+// strip removal
+bool ElectronECin_strip(double lv, int sector){
+  if(sector == 1){
+    if(lv < 72 || lv > 94) return true;
+    else return false;
+  }
+  else return true;
+}
+bool ElectronECout_strip(double lu, double lw, int sector){
+  if(sector == 2){
+    if(lw < 68 || lw > 84) return true;
+    else return false;
+  }
+  else if (sector == 5){
+    if(lu < 200 || lu > 220) return true;
+    else return false;
+  }
+  else return true;
+}
+bool ElectronPCAL_cut(double lv, double lw, int sector){
+  if(sector == 1){
+    return (lv > 22.5 && lw > 22.5);
+  }
+  else{
+    return (lv > 13.5 && lw > 13.5);
+  }
+}
+
+bool ElectronPID_DC(double edge1, double edge2, double edge3, int torus){
+  if(torus == -1){  // INBENDING ELECTRON 
+    if(edge1 > 4 && edge2 > 5 && edge3 > 8) return true; // from Derek Holmberg
+    else return false;
+  }
+  else if(torus == 1){  // OUTBENDING ELECTRON
+    if(edge1 > 3 && edge2 > 3 && edge3 > 10) return true;
+    else return false;
+  }
+  else return false;
+}
+
 
 // HADRON PID 
 // C2
@@ -243,7 +248,7 @@ bool KinematicPID_xF(double xF){
 }
 
 bool KinematicPID_W(double w){
-  return w > 0;
+  return w > 1.95;
 }
 
 bool HadronPID_DC(double edge1, double edge2, double edge3, int torus){
@@ -258,26 +263,15 @@ bool HadronPID_DC(double edge1, double edge2, double edge3, int torus){
   else return false;
 }
 
-bool ElectronPID_DC(double edge1, double edge2, double edge3, int torus){
-  if(torus == -1){  // INBENDING ELECTRON 
-    if(edge1 > 5 && edge2 > 5 && edge3 > 10) return true;
-    else return false;
-  }
-  else if(torus == 1){  // OUTBENDING ELECTRON
-    if(edge1 > 3 && edge2 > 3 && edge3 > 10) return true;
-    else return false;
-  }
-  else return false;
-}
 
 bool KinematicPID_Vertex(double vz, int torus, int pid){
   bool signal = false;
   if(torus == -1){  // INBENDING
     if(pid > 20){
-      if(-10 < vz && vz < 2.5) signal = true;
+      if(-10 < vz && vz < 1) signal = true; // maybe better -10, 2
     } 
     if(pid < 20){
-      if(-8 < vz && vz < 3) signal = true;
+      if(-9 < vz && vz < 1) signal = true; // summer -9, 1, fall and spring use -7.5, 2.5
     }
   }
   if(torus == 1){   // OUTBENDING
@@ -339,10 +333,12 @@ void rgc(const char* fileList){
     double electron_px_mc, electron_py_mc, electron_pz_mc, electron_mom_mc, electron_eng_mc;
     double electron_theta, electron_phi, electron_theta_mc, electron_phi_mc;
     int electron_Nphe, electron_status, electron_sector;
-    double electron_PCAL, electron_ECAL, electron_ECIN, electron_CAL_Tot, electron_vz;
+    double electron_PCAL, electron_ECAL, electron_ECIN, electron_CAL_Tot, electron_vz, electron_vx;
     double electron_edge1, electron_edge2, electron_edge3, electron_ass;
     double electron_ECin_lu, electron_ECin_lv, electron_ECin_lw;
+    double electron_PCAL_lu, electron_PCAL_lv, electron_PCAL_lw;
     double electron_ECout_lu, electron_ECout_lv, electron_ECout_lw;
+    double CVT_edge12, CVT_edge1, CVT_edge3, CVT_edge5, CVT_edge7;
     // elettrone
     double electron_Phi, electron_E, electron_W, electron_Q2;
     // gamma
@@ -355,7 +351,7 @@ void rgc(const char* fileList){
     double kaon_Q2_mc, kaon_xB_mc, kaon_xF_mc, kaon_y_mc, kaon_Mx_mc, kaon_z_mc, kaon_Pt_mc, kaon_s_mc, kaon_W_mc;
     double kaon_theta, kaon_phi_lab, kaon_phi_h, kaon_eta, kaon_Pt_ratio;
     double kaon_theta_mc, kaon_phi_lab_mc, kaon_phi_h_mc, kaon_eta_mc, kaon_Pt_ratio_mc;
-    double kaon_parent, kaon_parent_mc, kaon_parent_idx;
+    double kaon_parent, kaon_parent_mc, kaon_parent_idx, kaon_vz;
     double kaon_rich_tr1_x, kaon_rich_tr1_y, kaon_rich_tr1;
     double kaon_rich_tr2_x, kaon_rich_tr2_y, kaon_rich_tr2;
     double kaon_rich_tr3_x, kaon_rich_tr3_y, kaon_rich_tr3;
@@ -364,7 +360,9 @@ void rgc(const char* fileList){
     double kaon_rich_ch, kaon_rich_Mchi2;
     double kaon_chi2pid, kaon_polariz;
     double clas_pid, kaon_beta;
-    double kaon_helicity;
+    double beam_helicity;
+    double kaon_tt;
+    double photon_en;
 
     
     // VECTOR CMS
@@ -372,20 +370,34 @@ void rgc(const char* fileList){
     TVector3 beta_cms_kaon_mc;
     // KAON+
     // REC
-    Kaon_tree.Branch("event", &event);
+    //Kaon_tree.Branch("event", &event);
     Kaon_tree.Branch("el_px", &electron_px), Kaon_tree.Branch("el_py", &electron_py), Kaon_tree.Branch("el_pz", &electron_pz);
     Kaon_tree.Branch("el_mom", &electron_mom), Kaon_tree.Branch("el_W", &electron_W);
+    Kaon_tree.Branch("el_vz", &electron_vz), Kaon_tree.Branch("el_vx", &electron_vx);
     Kaon_tree.Branch("el_theta", &electron_theta), Kaon_tree.Branch("el_phi", &electron_phi);
+    Kaon_tree.Branch("gamma_E", &photon_en);
     Kaon_tree.Branch("s", &kaon_s), Kaon_tree.Branch("clas_chi2", &kaon_chi2pid, "clas_chi2/D");
     Kaon_tree.Branch("clas_pid", &clas_pid), Kaon_tree.Branch("beta", &kaon_beta);
-    Kaon_tree.Branch("Q2", &kaon_Q2), Kaon_tree.Branch("xB", &kaon_xB), Kaon_tree.Branch("xF", &kaon_xF), Kaon_tree.Branch("y", &kaon_y), Kaon_tree.Branch("z", &kaon_z);
+    Kaon_tree.Branch("Q2", &kaon_Q2), Kaon_tree.Branch("xB", &kaon_xB), Kaon_tree.Branch("xF", &kaon_xF), Kaon_tree.Branch("y", &kaon_y), Kaon_tree.Branch("z", &kaon_z), Kaon_tree.Branch("-t", &kaon_tt);
     Kaon_tree.Branch("kaon_px", &kaon_px, "kaon_px/D"), Kaon_tree.Branch("kaon_py", &kaon_py, "kaon_py/D"), Kaon_tree.Branch("kaon_pz", &kaon_pz, "kaon_pz/D");
     Kaon_tree.Branch("kaon_mom", &kaon_mom), Kaon_tree.Branch("kaon_Pt", &kaon_Pt), Kaon_tree.Branch("Pt_over_zQ", &kaon_Pt_ratio);
     Kaon_tree.Branch("kaon_theta", &kaon_theta), Kaon_tree.Branch("kaon_phi_lab", &kaon_phi_lab), Kaon_tree.Branch("kaon_phi_h", &kaon_phi_h);
-    Kaon_tree.Branch("eta", &kaon_eta), Kaon_tree.Branch("kaon_parent", &kaon_parent);
+    Kaon_tree.Branch("eta", &kaon_eta), Kaon_tree.Branch("kaon_vz", &kaon_vz) , Kaon_tree.Branch("kaon_parent", &kaon_parent);
     Kaon_tree.Branch("gamma", &kaon_gamma), Kaon_tree.Branch("epsilon", &kaon_epsilon);
     Kaon_tree.Branch("Mx", &kaon_Mx), Kaon_tree.Branch("W", &kaon_W);
-    Kaon_tree.Branch("Polarization", &kaon_polariz, "Polarization/D"), Kaon_tree.Branch("Helicity", &kaon_helicity, "Helicity/D");
+    Kaon_tree.Branch("Polarization", &kaon_polariz, "Polarization/D"), Kaon_tree.Branch("Helicity", &beam_helicity, "Helicity/D");
+    //CAL
+    /*
+    Kaon_tree.Branch("el_PCAL_e", &electron_PCAL, "el_PCAL_e/D"), Kaon_tree.Branch("el_status", &electron_status, "el_status/I"), Kaon_tree.Branch("el_sector", &electron_sector, "el_sector/I");
+    Kaon_tree.Branch("el_PCAL_lu", &electron_PCAL_lu, "el_PCAL_lu/D"), Kaon_tree.Branch("el_PCAL_lv", &electron_PCAL_lv, "el_PCAL_lv/D"), Kaon_tree.Branch("el_PCAL_lw", &electron_PCAL_lw, "el_PCAL_lw/D");
+    Kaon_tree.Branch("el_ECin_lu", &electron_ECin_lu, "el_ECin_lu/D"), Kaon_tree.Branch("el_ECin_lv", &electron_ECin_lv, "el_ECin_lv/D"), Kaon_tree.Branch("el_ECin_lw", &electron_ECin_lw, "el_ECin_lw/D");
+    Kaon_tree.Branch("el_ECout_lu", &electron_ECout_lu, "el_ECout_lu/D"), Kaon_tree.Branch("el_ECout_lv", &electron_ECout_lv, "el_ECout_lv/D"), Kaon_tree.Branch("el_ECout_lw", &electron_ECout_lw, "el_ECout_lw/D");
+    */
+    //
+    //Kaon_tree.Branch("CVT_edge1", &CVT_edge1, "CVT_edge1/D"); 
+    //Kaon_tree.Branch("CVT_edge3", &CVT_edge3, "CVT_edge3/D"), Kaon_tree.Branch("CVT_edge5", &CVT_edge5, "CVT_edge5/D");
+    //Kaon_tree.Branch("CVT_edge7", &CVT_edge7, "CVT_edge7/D"), Kaon_tree.Branch("CVT_edge12", &CVT_edge12, "CVT_edge12/D");
+    //
     Kaon_tree.Branch("Rich_Id", &kaon_rich_Id, "Rich_Id/D");
     Kaon_tree.Branch("Rich_mass", &kaon_best_mass, "Rich_mass/D");
     Kaon_tree.Branch("Rich_PID", &kaon_rich_PID, "Rich_PID/D");
@@ -415,16 +427,23 @@ void rgc(const char* fileList){
     TLorentzVector pip_4v(0,0,0,db2->GetParticle(211)->Mass());      // Pion+
     TLorentzVector pip_4v_mc(0,0,0,db2->GetParticle(211)->Mass());
     TLorentzVector pim(0,0,0,db2->GetParticle(-211)->Mass());        // Pion-
-    TLorentzVector kp_4v(0,0,0,db2->GetParticle(321)->Mass());       // Kaon+
+    TLorentzVector kp_4v(0,0,0,db2->GetParticle(-321)->Mass());       // Kaon+
     TLorentzVector kp_4v_mc(0,0,0,db2->GetParticle(321)->Mass());
-    TLorentzVector km(0,0,0,db2->GetParticle(-321)->Mass());         // Kaon-
+    TLorentzVector km_4v(0,0,0,db2->GetParticle(-321)->Mass());         // Kaon-
+    TLorentzVector positron(0, 0, 0, db2->GetParticle(-11)->Mass());   // Positron
     TLorentzVector Lab = beam + target;
     double ProtonMass = db2->GetParticle(2212)->Mass();
 
     int nbin = 200;
     //TH2D kp_PxVsPy ("_PxVsPy", "Correlation P_{x} vs P_{y}  |  K+  | with EventBuilder + RICH ; P_{x} [GeV]; P_{y} [GeV]", nbin, -2, 2, nbin, -2, 2);
-    TH2D el_PxVsPy ("el_PxVsPy", "Correlation P_{x} vs P_{y}  |  e-  | with EventBuilder + RICH ; P_{x} [GeV]; P_{y} [GeV]", nbin, -2, 2, nbin, -2, 2);
-
+    //TH2D el_PxVsPy ("el_PxVsPy", "Correlation P_{x} vs P_{y}  |  e-  | with EventBuilder + RICH ; P_{x} [GeV]; P_{y} [GeV]", nbin, -2, 2, nbin, -2, 2);
+    //TH2D el_ECin_lvlw ("el_ECin_lvlw", "ECin lv vs lw  ; lw; lv", nbin, 0, 450, nbin, 0, 450);
+    //TH2D el_ECout_lulw ("el_ECout_lulw", "ECout lu vs lw  ; lu; lw", nbin, 0, 450, nbin, 0, 450);
+    //TH1D elpos_selection ("elpos_selection", "Electron and Positron selection; M_{e^{-}e^{+}} [GeV]", 100, 0, 3);
+    //TH1D elpos_vz ("elpos_vz", "Electron and Positron vertex position; v_{z}^{e^{-}} - v_{z}^{e^{+}} [cm]", 100, -20, 20);
+    //TH1D elpos_theta_ee ("elpos_theta_ee", "Electron-Positron opening angle; #theta_{e^{-}e^{+}} [deg]", 100, 0, 60);
+    //TH2D elpos_MvsTheta ("elpos_MvsTheta", "Electron-Positron invariant mass vs opening angle; #theta_{e^{-}e^{+}} [deg]; M_{e^{-}e^{+}} [GeV]", 100, 0, 10, 100, 0, 0.3);
+    //TH2D elpos_Mvsvz ("elpos_Mvsvz", "Electron-Positron invariant mass vs vertex position; v_{z}^{e^{-}} - v_{z}^{e^{+}} [cm]; M_{e^{-}e^{+}} [GeV]", 100, -20, 20, 100, 0, 3);
 
     auto config_c12=chain.GetC12Reader();
     chain.SetReaderTags({0});
@@ -450,6 +469,47 @@ void rgc(const char* fileList){
     //TH2D kp_rich_pmt_xy ("rich_pmt_xy", "PMT RICH 4th sector, xy plane | t+1 & K+; x [cm]; y [cm]", 100, -170, 170, 100, -70, 70);
     //TH2D kp_rich_aerogel_xy ("rich_aerogel_xy", "Aerogel RICH 4th sector, xy plane | t+1 & K+; x [cm]; y [cm]", 100, -170, 220, 100, -85, 85);
 
+
+
+    QA::QADB qa("latest");
+    qa.CheckForDefect("TotalOutlier");
+    qa.CheckForDefect("TerminalOutlier");
+    qa.CheckForDefect("MarginalOutlier");
+    qa.CheckForDefect("SectorLoss");
+    qa.CheckForDefect("LowLiveTime");
+    qa.CheckForDefect("Misc");
+    qa.CheckForDefect("ChargeHigh");
+    qa.CheckForDefect("ChargeNegative");
+    qa.CheckForDefect("ChargeUnknown");
+    qa.CheckForDefect("PossiblyNoBeam");
+
+    auto setupQA = [](QA::QADB& q) {
+    q.CheckForDefect("TotalOutlier");
+    q.CheckForDefect("TerminalOutlier");
+    q.CheckForDefect("MarginalOutlier");
+    q.CheckForDefect("SectorLoss");
+    q.CheckForDefect("LowLiveTime");
+    q.CheckForDefect("Misc");
+    q.CheckForDefect("ChargeHigh");
+    q.CheckForDefect("ChargeNegative");
+    q.CheckForDefect("ChargeUnknown");
+    q.CheckForDefect("PossiblyNoBeam");
+
+    // RGC run con Misc lecito — empty target / He per dilution factor
+    std::vector<int> allow_misc = {
+        16194, 16089, 16185, 16308, 16184, 16307, 16309, // RGC Su22 He/ET
+        16872, 16975,                                      // RGC Fa22 He/ET
+        17763, 17764, 17765, 17766, 17767, 17768,          // RGC Sp23 He/ET
+        17179, 17180, 17181, 17182, 17183, 17188, 17189,   // RICH off/partially down
+        17252
+        };
+        for (auto run : allow_misc) q.AllowMiscBit(run);
+    };
+
+    setupQA(qa);
+
+    int count = 0;
+    int countK = 0;
     int eventCount = 0;
     while (chain.Next()){
         eventCount++;
@@ -458,14 +518,41 @@ void rgc(const char* fileList){
         auto virtual_gamma = c12->getByID(22);
         vector<clas12::region_part_ptr> electrons_vec;
         vector<clas12::region_part_ptr> kaon_vec;
+        vector<clas12::region_part_ptr> kaon_min_vec;
+        vector<clas12::region_part_ptr> positrons_vec;
+        vector<clas12::region_part_ptr> pion_vec;
         for(auto &p:c12->getDetParticles()){
             int pidd = p->getPid();
             if(p->getPid() == 11) electrons_vec.push_back(p);
             if(p->getPid() == 321) kaon_vec.push_back(p);
+            if(p->getPid() == -321) kaon_min_vec.push_back(p);
+            else if(p->getPid() == -11) positrons_vec.push_back(p);
+            else if(p->getPid() == 211) pion_vec.push_back(p);
+            else if(p->rich() && p->rich()->getBest_PID()==-321) kaon_min_vec.push_back(p);
             else if(p->rich() && p->rich()->getBest_PID()==321) kaon_vec.push_back(p);
+            else if(p->rich() && p->rich()->getBest_PID()==11) electrons_vec.push_back(p);
+            else if(p->rich() && p->rich()->getBest_PID()==-11) positrons_vec.push_back(p);
+            else if(p->rich() && p->rich()->getBest_PID()==211) pion_vec.push_back(p);
         }
         auto N_run = c12->runconfig()->getRun(); 
+        auto N_event = c12->runconfig()->getEvent();
+        auto b_helicity = c12->event()->getHelicity();
+        beam_helicity = b_helicity * qa.CorrectHelicitySign(N_run, N_event);
+        double target_spinstate = BeamPolarization_file(N_run);
         auto torus = -1;
+        // QADB
+        bool qa_passed = qa.Pass(N_run, N_event);
+        if (N_run > 16600 && N_run < 16700) qa_passed = false; // Hall C bleedthrough
+        if (N_run > 17768 && N_run <= 17811) qa_passed = false; // RGC Sp23 outbending
+        if (N_run == 17331 || N_run == 16987 ||
+            N_run == 17079 || N_run == 17190 ||
+            N_run == 17639) qa_passed = false;                   // low live time
+        if (N_run == 16850 || N_run == 16851 || N_run == 16852 ||
+            N_run == 16855 || N_run == 16879) qa_passed = false; // luminosity scans
+        if (qa_passed){
+          qa.AccumulateCharge();
+          qa.AccumulateChargeHL();  
+        }
         // REC ELECTRONS
         for (auto& e : electrons_vec) {
             event++;
@@ -476,11 +563,15 @@ void rgc(const char* fileList){
             electron_mom = el_4vec.P(), electron_eng = el_4vec.E();
             electron_theta = el_4vec.Theta(), electron_phi = el_4vec.Phi();
             gamma_nu = beam.E() - el_4vec.E();
+            double electron_chi2 = e->getChi2Pid();
+            double electron_y = target.Dot(q) / target.Dot(beam);
             electron_Q2 = -q.M2();
             electron_W = pow(pow(pr.M(),2)+2*pr.M()*gamma_nu - electron_Q2, 0.5);
             electron_status = e->getStatus();
             electron_sector = e->getSector();
             electron_vz = e->par()->getVz();
+            electron_vx = e->par()->getVx();
+            double electron_vy = e->par()->getVy();
             electron_PCAL = e->cal(PCAL)->getEnergy();    
             electron_ECAL = e->cal(ECAL)->getEnergy();
             electron_ECIN = e->cal(ECIN)->getEnergy();
@@ -488,20 +579,52 @@ void rgc(const char* fileList){
             electron_edge1 = e->traj(6,6)->getEdge();
             electron_edge2 = e->traj(6,18)->getEdge();
             electron_edge3 = e->traj(6,36)->getEdge();
-            kaon_helicity = c12->event()->getHelicity();
-            el_PxVsPy.Fill(electron_px, electron_py);
             //
+            electron_PCAL_lu = e->cal(PCAL)->getLu();
+            electron_PCAL_lv = e->cal(PCAL)->getLv(); 
+            electron_PCAL_lw = e->cal(PCAL)->getLw();
             electron_ECin_lu = e->cal(ECIN)->getLu();
-            // ElectronPID_ForwardDetector yes!
+            electron_ECin_lv = e->cal(ECIN)->getLv();
+            electron_ECin_lw = e->cal(ECIN)->getLw();
+            electron_ECout_lu = e->cal(ECOUT)->getLu();
+            electron_ECout_lv = e->cal(ECOUT)->getLv();
+            electron_ECout_lw = e->cal(ECOUT)->getLw();
+
+            // ElectronPID_ForwardDetector yes?
             // ElectronPID_CalSFcut(int sector, int runnum, double p, double cal_energy) ADD
-            if(ElectronPID_ForwardDetector(electron_status) && ElectronPID_PCAL(electron_PCAL) && ElectronPID_DiagonalCut(e, &Elec) && 
-            ElectronPID_VertexCut(electron_vz) && ElectronPID_DC(electron_edge1, electron_edge2, electron_edge3, torus)){
-              el_PxVsPy.Fill(electron_px, electron_py);
+            // ElectronPID_DiagonalCut(e, &Elec) necessary for RGA, RGC?
+            // ElectronEC_cut(electron_ECout_lu ,electron_ECout_lv, electron_ECout_lw) && toglie metà statistica...
+            if(ElectronPID_PCAL(electron_PCAL) && KinematicPID_W(electron_W) && std::fabs(electron_chi2) <= 3 &&
+            ElectronPID_VertexCut(electron_vz, electron_vx, electron_vy) && ElectronPID_DC(electron_edge1, electron_edge2, electron_edge3, torus) &&
+            ElectronPCAL_cut(electron_PCAL_lv, electron_PCAL_lw, electron_sector)  && electron_y < 0.8 && electron_Q2 > 0.95 &&
+            ElectronECin_strip(electron_ECin_lv, electron_sector) && ElectronECout_strip(electron_ECout_lu, electron_ECout_lw, electron_sector) && qa_passed){
+                /*
+                bool pos_cut = false;
+                for(auto& pos : positrons_vec){
+                    double pos_px = pos->getPx(), pos_py = pos->getPy(), pos_pz = pos->getPz();
+                    double pos_mom = pow(pos_px*pos_px + pos_py*pos_py + pos_pz*pos_pz, 0.5);
+                    SetLorentzVector(positron, pos);
+                    double inv_mass = (el_4vec + positron).M();
+                    double pos_theta = positron.Theta(), pos_phi = positron.Phi();
+                    double theta_ee = (el_4vec.Vect().Angle(positron.Vect())) * 180 / TMath::Pi();
+                    double pos_vz = pos->par()->getVz();
+                    //
+                    //elpos_selection.Fill(inv_mass);
+                    //elpos_vz.Fill(electron_vz - pos_vz);
+                    //elpos_theta_ee.Fill(theta_ee);
+                    //elpos_MvsTheta.Fill(theta_ee, inv_mass);
+                    //elpos_Mvsvz.Fill(electron_vz - pos_vz, inv_mass);
+                    if (inv_mass <= 0.1 && theta_ee <= 3){
+                      count++;
+                      pos_cut = true;
+                      continue;
+                    }
+                }
+                */
                 // REC KAON+
                 for(auto& kp : kaon_vec){
+                  //if (pos_cut) continue;
                     SetLorentzVector(kp_4v, kp);
-                    kaon_rich_ntot = kp->rich()->getBest_ntot();
-                    //if(kaon_rich_ntot == 0) continue;
                     kaon_y = target.Dot(q) / target.Dot(beam);
                     TLorentzVector Mx = (Lab - el_4vec - kp_4v);
                     kaon_Mx = Mx.M(), kaon_mom = kp_4v.P(), kaon_eng = kp_4v.E();
@@ -513,78 +636,110 @@ void rgc(const char* fileList){
                     kaon_xF = (2 * kaon_cms_4v.Pz()) / sqrt(kaon_s);
                     //kaon_polariz = BeamPolarization(N_run, true);
                     kaon_polariz = BeamPolarization_file(N_run);
-                    double kaon_vz = kp->par()->getVz();
+                    kaon_vz = kp->par()->getVz();
                     clas_pid = kp->getPid();
                     kaon_beta = kp->getBeta();
-                    if(kaon_y <= 0.8 && kaon_mom >= 1 && kaon_z >= 0.2 && kaon_xF > 0){
-                        kaon_px = kp->getPx(), kaon_py = kp->getPy(), kaon_pz = kp->getPz();
-                        kaon_Q2 = -q.M2();
-                        kaon_xB = kaon_Q2 / (2 * target.Dot(q));      
-                        kaon_Pt = kp_4v.Perp(q.Vect()); 
-                        kaon_theta = kp_4v.Theta(), kaon_phi_lab = kp_4v.Phi(), kaon_eta = kp_4v.PseudoRapidity();
-                        kaon_chi2pid = kp->getChi2Pid();
-                        //
-                        double kaon_edge1 = kp->traj(6,6)->getEdge();
-                        double kaon_edge2 = kp->traj(6,18)->getEdge();
-                        double kaon_edge3 = kp->traj(6,36)->getEdge();
-                        // RICH
-                        kaon_rich_tr1 = kp->traj(18,1)->getEdge();
-                        kaon_rich_tr1_x = kp->traj(18,1)->getX();
-                        kaon_rich_tr1_y = kp->traj(18,1)->getY();
-                        kaon_rich_tr2 = kp->traj(18,2)->getEdge();
-                        kaon_rich_tr2_x = kp->traj(18,2)->getX();
-                        kaon_rich_tr2_y = kp->traj(18,2)->getY();
-                        kaon_rich_tr3 = kp->traj(18,3)->getEdge();
-                        kaon_rich_tr3_x = kp->traj(18,3)->getX();
-                        kaon_rich_tr3_y = kp->traj(18,3)->getY();
-                        kaon_rich_tr4 = kp->traj(18,4)->getEdge();
-                        kaon_rich_tr4_x = kp->traj(18,4)->getX();
-                        kaon_rich_tr4_y = kp->traj(18,4)->getY();
+                    kaon_px = kp->getPx(), kaon_py = kp->getPy(), kaon_pz = kp->getPz();
+                    kaon_Q2 = -q.M2();
+                    kaon_xB = kaon_Q2 / (2 * target.Dot(q));      
+                    kaon_Pt = kp_4v.Perp(q.Vect()); 
+                    kaon_theta = kp_4v.Theta(), kaon_phi_lab = kp_4v.Phi(), kaon_eta = kp_4v.PseudoRapidity();
+                    kaon_chi2pid = kp->getChi2Pid();
+                    kaon_tt = (q - kp_4v).M2();
+                    photon_en = q.E(); // cut for gamma for best photon efficiency is 0.35 GeV
+                    //
+                    double kaon_edge1 = kp->traj(6,6)->getEdge();
+                    double kaon_edge2 = kp->traj(6,18)->getEdge();
+                    double kaon_edge3 = kp->traj(6,36)->getEdge();
+                    // CVT - non riesco ad accedere
+                    CVT_edge1 = kp->traj(5, 1)->getEdge();
+                    CVT_edge3 = kp->traj(5, 3)->getEdge();
+                    CVT_edge5 = kp->traj(5, 5)->getEdge();
+                    CVT_edge7 = kp->traj(5, 7)->getEdge();
+                    CVT_edge12 = kp->traj(5, 12)->getEdge();
+                    // RICH
+                    kaon_rich_tr1 = kp->traj(18,1)->getEdge();
+                    kaon_rich_tr1_x = kp->traj(18,1)->getX();
+                    kaon_rich_tr1_y = kp->traj(18,1)->getY();
+                    kaon_rich_tr2 = kp->traj(18,2)->getEdge();
+                    kaon_rich_tr2_x = kp->traj(18,2)->getX();
+                    kaon_rich_tr2_y = kp->traj(18,2)->getY();
+                    kaon_rich_tr3 = kp->traj(18,3)->getEdge();
+                    kaon_rich_tr3_x = kp->traj(18,3)->getX();
+                    kaon_rich_tr3_y = kp->traj(18,3)->getY();
+                    kaon_rich_tr4 = kp->traj(18,4)->getEdge();
+                    kaon_rich_tr4_x = kp->traj(18,4)->getX();
+                    kaon_rich_tr4_y = kp->traj(18,4)->getY();
 
-                        // Trento Convention - Scattering Plane Axis calculation
-                        TVector3 zAxis = q.Vect().Unit();           // virtual photon direction
-                        TVector3 l_vect = beam.Vect();              // spatial component of the beam lepton
-                        TVector3 sl_vect = el_4vec.Vect();               // spatial component of the scattered lepton           
-                        TVector3 yAxis = (l_vect.Cross(sl_vect)).Unit();
-                        TVector3 xAxis = yAxis.Cross(zAxis);        // x-Axis of the scattering plane
-                        TVector3 Ph_T = kp_4v.Vect() - (kp_4v.Vect() * zAxis) * zAxis; 
-                        TVector3 Ph_T_hat = Ph_T.Unit();
-                        double kaon_Ph_x = Ph_T.Dot(xAxis);
-                        double kaon_Ph_y = Ph_T.Dot(yAxis);
-                        kaon_phi_h = TMath::ATan2(kaon_Ph_y, -kaon_Ph_x);
-                        kaon_best_mass = kp->rich()->getBest_mass();
-                        kaon_rich_Id = kp->rich()->getId();
-                        kaon_rich_PID = kp->rich()->getBest_PID();
-                        kaon_rich_ch = kp->rich()->getBest_ch();
-                        kaon_rich_chi2 = kp->rich()->getBest_c2(); // Best_c2
-                        kaon_rich_Mchi2 = kp->rich()->getMchi2();
-                        kaon_rich_RQ = kp->rich()->getRQ();
-                        kaon_rich_RL = kp->rich()->getBest_RL();
+                    // Trento Convention - Scattering Plane Axis calculation
+                    TVector3 zAxis = q.Vect().Unit();           // virtual photon direction
+                    TVector3 l_vect = beam.Vect();              // spatial component of the beam lepton
+                    TVector3 sl_vect = el_4vec.Vect();               // spatial component of the scattered lepton           
+                    TVector3 yAxis = (l_vect.Cross(sl_vect)).Unit();
+                    TVector3 xAxis = yAxis.Cross(zAxis);        // x-Axis of the scattering plane
+                    TVector3 Ph_T = kp_4v.Vect() - (kp_4v.Vect() * zAxis) * zAxis; 
+                    TVector3 Ph_T_hat = Ph_T.Unit();
+                    double kaon_Ph_x = Ph_T.Dot(xAxis);
+                    double kaon_Ph_y = Ph_T.Dot(yAxis);
+                    kaon_phi_h = TMath::ATan2(kaon_Ph_y, -kaon_Ph_x);
+                    //
+                    kaon_best_mass = kp->rich()->getBest_mass();
+                    kaon_rich_Id = kp->rich()->getId();
+                    kaon_rich_PID = kp->rich()->getBest_PID();
+                    kaon_rich_ch = kp->rich()->getBest_ch();
+                    kaon_rich_chi2 = kp->rich()->getBest_c2(); // Best_c2
+                    kaon_rich_Mchi2 = kp->rich()->getMchi2();
+                    kaon_rich_RQ = kp->rich()->getRQ();
+                    kaon_rich_RL = kp->rich()->getBest_RL();
+                    kaon_rich_ntot = kp->rich()->getBest_ntot();
 
-                        kaon_W = sqrt((kaon_eng + electron_eng)*(kaon_eng + electron_eng) - (kaon_mom + electron_mom)*(kaon_mom + electron_mom));
-                        kaon_Pt_ratio = kaon_Pt / (kaon_z * sqrt(kaon_Q2));
-                        kaon_gamma = (2*kaon_xB*ProtonMass)/(sqrt(kaon_Q2));
-                        kaon_epsilon = (1- kaon_y - 0.25 * pow(kaon_gamma, 2) * pow(kaon_y, 2))/(1 - kaon_y + 0.5 * pow(kaon_y,2) + 0.25*pow(kaon_gamma,2)*pow(kaon_y,2));
-
-                        if(HadronPID_Q2(kaon_Q2) && HadronPID_DC(kaon_edge1, kaon_edge2, kaon_edge3, -1) && 
-                        HadronPID_Chi2Pid(kaon_chi2pid) && KinematicPID_Vertex(kaon_vz, torus, 321)){
-                            //kp_rich_pmt_xy.Fill(kaon_rich_tr1_x, kaon_rich_tr1_y);
-                            //kp_rich_aerogel_xy.Fill(kaon_rich_tr2_x, kaon_rich_tr2_y);
-                            //kp_rich_aerogel_xy.Fill(kaon_rich_tr3_x, kaon_rich_tr3_y);
-                            //kp_rich_aerogel_xy.Fill(kaon_rich_tr4_x, kaon_rich_tr4_y);
-                            //kp_PxVsPy.Fill(kaon_px, kaon_py);
-                            Kaon_tree.Fill();
-                        }
+                    kaon_W = sqrt((kaon_eng + electron_eng)*(kaon_eng + electron_eng) - (kaon_mom + electron_mom)*(kaon_mom + electron_mom));
+                    kaon_Pt_ratio = kaon_Pt / (kaon_z * sqrt(kaon_Q2));
+                    kaon_gamma = (2*kaon_xB*ProtonMass)/(sqrt(kaon_Q2));
+                    kaon_epsilon = (1- kaon_y - 0.25 * pow(kaon_gamma, 2) * pow(kaon_y, 2))/(1 - kaon_y + 0.5 * pow(kaon_y,2) + 0.25*pow(kaon_gamma,2)*pow(kaon_y,2));
+                    //if(kaon_y <= 0.8 && kaon_mom >= 1 && kaon_z >= 0.2 && kaon_xF > 0){
+                    if(HadronPID_Q2(kaon_Q2) && HadronPID_DC(kaon_edge1, kaon_edge2, kaon_edge3, -1) && kaon_y <= 0.8 && kaon_mom >= 1 &&
+                    HadronPID_Chi2Pid(kaon_chi2pid) && KinematicPID_Vertex(kaon_vz, torus, 321) && kaon_z >= 0.2 && kaon_xF > 0){
+                      //kp_rich_pmt_xy.Fill(kaon_rich_tr1_x, kaon_rich_tr1_y);
+                      //kp_rich_aerogel_xy.Fill(kaon_rich_tr2_x, kaon_rich_tr2_y);
+                      //kp_rich_aerogel_xy.Fill(kaon_rich_tr3_x, kaon_rich_tr3_y);
+                      //kp_rich_aerogel_xy.Fill(kaon_rich_tr4_x, kaon_rich_tr4_y);
+                      //kp_PxVsPy.Fill(kaon_px, kaon_py);
+                      Kaon_tree.Fill();
                     }
                 }
             }
         }
     }
+    
+    double Q = qa.GetAccumulatedCharge();
+    double Q_p = qa.GetAccumulatedChargeHL(+1);
+    double Q_m = qa.GetAccumulatedChargeHL(-1);
+    cout << "total charge: " << Q << endl;
+    cout << "positive charge: " << Q_p << endl;
+    cout << "negative charge: " << Q_m << endl;
+    /*
+    double mb = std::min(C_pp + C_pm, C_mp + C_mm);
+    double mt = std::min(C_pp + C_mp, C_pm + C_mm);
+
+    double w_pp = (mb * mt) / ((C_pp + C_pm) * (C_pp + C_mp));
+    double w_pm = (mb * mt) / ((C_pp + C_pm) * (C_pm + C_mm));
+    double w_mp = (mb * mt) / ((C_mp + C_mm) * (C_pp + C_mp));
+    double w_mm = (mb * mt) / ((C_mp + C_mm) * (C_pm + C_mm));
+
+    cout << "wpp: " << w_pp << endl;
+    cout << "wpm: " << w_pm << endl;
+    cout << "wmp: " << w_mp << endl;  
+    cout << "wmm: " << w_mm << endl;
+    */
+
+
 
     outFile.Write();
     outFile.Close();
     
     cout << "" << endl;
+    cout << "events saved: " << Kaon_tree.GetEntries() << endl;
     cout << "ROOT output file: " << outputFile << endl;
     cout << "" << endl;
 }
