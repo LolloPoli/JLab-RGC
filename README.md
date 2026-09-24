@@ -1,7 +1,7 @@
 # JLAB RG-C
 
 This repository contains the code used for my study of Kaon SIDIS for single and double spin asymmetries at CLAS12 with the RGC experiment. 
-Asymmetries observed: $A_{UL}^{\sin\phi}$, $A_{UL}^{\sin 2\phi}$, $A_{LL}$, and $A_{LL}^{\cos\phi}$, $A_{LU}^{\sin\phi}$
+Asymmetries observed: $A_{UL}^{\sin\phi}$, $A_{UL}^{\sin 2\phi}$, $A_{LL}$, $A_{LL}^{\cos\phi}$, $A_{LU}^{\sin\phi}$
 
 ## MAIN CODE
 
