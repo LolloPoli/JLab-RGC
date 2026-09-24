@@ -28,3 +28,12 @@ Produce a plot of the systematics overlapped with the actual asymmetries extract
 
 - **`rich_rgc_analysis.cpp`**  
 Was used to perform some studies of the RICH performance.
+
+
+## Author
+
+**Lorenzo Polizzi**  
+PhD Student, University and INFN of Ferrara
+
+- GitHub: [LolloPoli](https://github.com/LolloPoli)
+- Email: `lorenzo.polizzi@unife.it` or `lpolizzi@fe.infn.it`
