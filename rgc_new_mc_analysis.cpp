@@ -151,8 +151,8 @@ double AUL_loglike_withLL(const double* Aul,
     const double A_UU_cos2  = Aul[5];
     const double A_LU_sin   = Aul[6];
 
-    double pBeam = 1.0;
-    double dilution = 1.0;  
+    double pBeam = 0.84;
+    double dilution = 0.25;  
 
     // -------- Event loop --------
     for (size_t i = 0; i < phi_h.size(); ++i) {
@@ -1331,11 +1331,12 @@ void rgc_new_mc_analysis(const char* period) {
 
     double A_UL_sin_inject  = 0.1;
     double A_UL_2sin_inject = 0.1;
-    double A_LL_0_inject    = 0.0;
-    double A_LL_cos_inject  = 0.10;
+    double A_LL_0_inject    = 0.4;
+    double A_LL_cos_inject  = 0.1;
     double A_LU_sin_inject = 0.05;
     double dilution = 0.25;
-    double beam_pol = 0.90;
+    double beam_pol = 0.84;
+    double PbPt = 0.71;
 
     double f_max_inject = 1.0 + dilution*0.85*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
                             + dilution*0.85*beam_pol*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
@@ -1354,23 +1355,42 @@ void rgc_new_mc_analysis(const char* period) {
         double kp_mc_theta_deg = kaonp_Theta_mc * 180.0 / TMath::Pi();
 
         // spin injection 
-        int fake_spinstate = (rng.Rndm() < 0.5) ? +1 : -1;   // deciso UNA VOLTA per questo evento
-        double fake_Pt = 1.0 * fake_spinstate;
-        fake_Ptarget_vec[i] = fake_Pt;
+            int fake_spinstate = (rng.Rndm() < 0.5) ? +1 : -1;   // one time per event
+            //int fake_spinstate = (rng.Rndm() < 0.5788) ? +1 : -1;
+            helicity_mc = (rng.Rndm() < 0.5) ? +1 : -1;
+            double fake_Pt = 0.85 * fake_spinstate;
+            fake_Ptarget_vec[i] = fake_Pt;
+            double bootw = rng.PoissonD(1.0);
 
-        double eps = kaonp_epsilon_mc, y = kaonp_y_mc;
-        double A = (y*y)/(2*(1-eps));
-        double B = A*eps, C = A*sqrt(1-eps*eps);
-        double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
+            // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
+            // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
 
-        double UL_mod = (V/A)*A_UL_sin_inject*sin(kaonp_Phi_h_mc) + (B/A)*A_UL_2sin_inject*sin(2*kaonp_Phi_h_mc);
-        double LL_mod = (C/A)*A_LL_0_inject + (W/A)*A_LL_cos_inject*cos(kaonp_Phi_h_mc);
-        double LU_mod = (W/A) * A_LU_sin_inject * sin(kaonp_Phi_h_mc);
+            const double z0  = 0.4;
+            const double Pt0 = 0.5;
+            const double cz  = 0.8;
+            const double cPt = 0.5;
 
-        double f = 1.0 + helicity_mc*LU_mod + fake_Pt*UL_mod + helicity_mc*fake_Pt*LL_mod;  // SOLO UL/LL iniettate
+            double A_UL_sin_inject_dep = A_UL_sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
 
-        double u = f_max_inject * rng.Rndm();   // un numero casuale DIVERSO per OGNI evento
-        keep_injected[i] = (u < f);
+            // ========================================================================================
+
+            double eps = kaonp_epsilon_mc, y = kaonp_y_mc;
+            double A = (y*y)/(2*(1-eps));
+            double B = A*eps, C = A*sqrt(1-eps*eps);
+            double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
+
+            double UL_mod = (V/A) * A_UL_sin_inject_dep*sin(kaonp_Phi_h_mc) + (B/A) * A_UL_2sin_inject_dep*sin(2*kaonp_Phi_h_mc); // added dependences
+            double LL_mod = (C/A) * A_LL_0_inject_dep + (W/A) * A_LL_cos_inject_dep*cos(kaonp_Phi_h_mc);
+            double LU_mod = (W/A) * A_LU_sin_inject_dep*sin(kaonp_Phi_h_mc);
+
+            //double f = 1.0 + helicity_mc*LU_mod + dilution*fake_Pt*beam_pol*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  
+            double f = 1.0 + helicity_mc*beam_pol*LU_mod + dilution*fake_Pt*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  // beampol
+            double u = f_max_inject * rng.Rndm();   
+            keep_injected[i] = (u < f);
         // 
         if(index_xQ2 >= 0 && index_zPt >= 0) {
             vec_kaonp_xB_4d_mc[index_xQ2-1][index_zPt-1].push_back(kaonp_xB_mc);
@@ -1422,23 +1442,42 @@ void rgc_new_mc_analysis(const char* period) {
 
         // ======================================================================================================================
         // spin injection 
-        int fake_spinstate = (rng.Rndm() < 0.5) ? +1 : -1;   // deciso UNA VOLTA per questo evento
-        double fake_Pt = 1.0 * fake_spinstate;
-        fake_Ptarget_vec_reco[i] = fake_Pt;
+            int fake_spinstate = (rng.Rndm() < 0.5) ? +1 : -1;   // one time per event
+            //int fake_spinstate = (rng.Rndm() < 0.5788) ? +1 : -1;
+            helicity = (rng.Rndm() < 0.5) ? +1 : -1;
+            double fake_Pt = 0.85 * fake_spinstate;
+            fake_Ptarget_vec_reco[i] = fake_Pt;
+            double bootw = rng.PoissonD(1.0);
 
-        double eps = kaonp_epsilon_recoMC, y = kaonp_y_recoMC;
-        double A = (y*y)/(2*(1-eps));
-        double B = A*eps, C = A*sqrt(1-eps*eps);
-        double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
+            // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
 
-        double UL_mod = (V/A)*A_UL_sin_inject*sin(kaonp_Phi_h_recoMC) + (B/A)*A_UL_2sin_inject*sin(2*kaonp_Phi_h_recoMC);
-        double LL_mod = (C/A)*A_LL_0_inject + (W/A)*A_LL_cos_inject*cos(kaonp_Phi_h_recoMC);
-        double LU_mod = (W/A) * A_LU_sin_inject * sin(kaonp_Phi_h_recoMC);
+            const double z0  = 0.4;
+            const double Pt0 = 0.5;
+            const double cz  = 0.8;
+            const double cPt = 0.5;
 
-        double f = 1.0 + helicity*LU_mod + fake_Pt*UL_mod + helicity*fake_Pt*LL_mod;  // SOLO UL/LL iniettate
+            double A_UL_sin_inject_dep  = A_UL_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
 
-        double u = f_max_inject * rng.Rndm();   // un numero casuale DIVERSO per OGNI evento
-        keep_injected_reco[i] = (u < f);
+            // ========================================================================================
+
+            double eps = kaonp_epsilon_recoMC, y = kaonp_y_recoMC;
+            double A = (y*y)/(2*(1-eps));
+            double B = A*eps, C = A*sqrt(1-eps*eps);
+            double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
+
+            double UL_mod = (V/A)*A_UL_sin_inject_dep*sin(kaonp_Phi_h_recoMC) + (B/A)*A_UL_2sin_inject_dep*sin(2*kaonp_Phi_h_recoMC);
+            double LL_mod = (C/A)*A_LL_0_inject_dep + (W/A)*A_LL_cos_inject_dep*cos(kaonp_Phi_h_recoMC);
+            double LU_mod = (W/A) * A_LU_sin_inject_dep * sin(kaonp_Phi_h_recoMC);
+
+            //double f = 1.0 + helicity*LU_mod + dilution*fake_Pt*UL_mod + dilution*helicity*fake_Pt*LL_mod;   
+            double f = 1.0 + helicity*beam_pol*LU_mod + dilution*fake_Pt*UL_mod + dilution*beam_pol*helicity*fake_Pt*LL_mod;  // beampol 
+
+            double u = f_max_inject * rng.Rndm();   // different for each event
+            keep_injected_reco[i] = (u < f);
         // ======================================================================================================================
 
         // omega all
@@ -2471,6 +2510,10 @@ void rgc_new_mc_analysis(const char* period) {
     TGraphErrors* graph2D_AUL_vs_z_2 = new TGraphErrors();
     TGraphErrors* graph2D_AUL_vs_z_3 = new TGraphErrors();
     TGraphErrors* graph2D_AUL_vs_z_4 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL_inject_1 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL_inject_2 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL_inject_3 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL_inject_4 = new TGraphErrors();
     int pz_idx1 = 0, pz_idx1_1 = 0, pz_idx1_2 = 0, pz_idx1_3 = 0, pz_idx1_4 = 0;
     for(int z = 0; z < nbin_zPt; z++){
         if (vec_kaonp_xB_2d_zPt_mc[z].empty()) continue; // Skip empty bins
@@ -2488,6 +2531,19 @@ void rgc_new_mc_analysis(const char* period) {
             if(val < min_x) min_x = val;
         }
         double mean_z = sum_z / vec_kaonp_z_2d_zPt_mc[z].size();
+
+        double sum_pt = 0.0;
+        double sum_z2 = 0.0;
+        for (double val : vec_kaonp_Pt_2d_zPt_mc[z]) sum_pt += val;
+        double mean_pt = sum_pt / vec_kaonp_Pt_2d_zPt_mc[z].size();
+        for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
+        double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
+        
+        const double z0  = 0.4;
+        const double Pt0 = 0.5;
+        const double cz  = 0.8;
+        const double cPt = 0.5;
+        double A_UL_sin_inject_dep = A_UL_sin_inject * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
         // Get AUL and error from vectors
         double aul_sin = AUL_sin_2d_zPt_mc[z]; 
         double aul_sin_err = AUL_sin_err_2d_zPt_mc[z];
@@ -2497,18 +2553,26 @@ void rgc_new_mc_analysis(const char* period) {
         if(z < 7){
             graph2D_AUL_vs_z_1->SetPoint(pz_idx1_1, mean_z, aul_sin);
             graph2D_AUL_vs_z_1->SetPointError(pz_idx1_1, 0.0, aul_sin_err); 
+            graph2D_AUL_inject_1->SetPoint(pz_idx1_1, mean_z, A_UL_sin_inject_dep);
+            graph2D_AUL_inject_1->SetPointError(pz_idx1_1, 0.0, 0.0); 
             pz_idx1_1++;
         } else if (z < 14){
             graph2D_AUL_vs_z_2->SetPoint(pz_idx1_2, mean_z, aul_sin);
             graph2D_AUL_vs_z_2->SetPointError(pz_idx1_2, 0.0, aul_sin_err);
+            graph2D_AUL_inject_2->SetPoint(pz_idx1_2, mean_z, A_UL_sin_inject_dep);
+            graph2D_AUL_inject_2->SetPointError(pz_idx1_2, 0.0, 0.0);
             pz_idx1_2++;
         } else if (z < 21){
             graph2D_AUL_vs_z_3->SetPoint(pz_idx1_3, mean_z, aul_sin);
             graph2D_AUL_vs_z_3->SetPointError(pz_idx1_3, 0.0, aul_sin_err);
+            graph2D_AUL_inject_3->SetPoint(pz_idx1_3, mean_z, A_UL_sin_inject_dep);
+            graph2D_AUL_inject_3->SetPointError(pz_idx1_3, 0.0, 0.0);
             pz_idx1_3++;
         } else if (z < 26){
             graph2D_AUL_vs_z_4->SetPoint(pz_idx1_4, mean_z, aul_sin);
             graph2D_AUL_vs_z_4->SetPointError(pz_idx1_4, 0.0, aul_sin_err);
+            graph2D_AUL_inject_4->SetPoint(pz_idx1_4, mean_z, A_UL_sin_inject_dep);
+            graph2D_AUL_inject_4->SetPointError(pz_idx1_4, 0.0, 0.0);
             pz_idx1_4++;
         }
     }
@@ -2517,9 +2581,13 @@ void rgc_new_mc_analysis(const char* period) {
     graph2D_AUL_vs_z_2->SetLineColor(kViolet-5), graph2D_AUL_vs_z_2->SetMarkerColor(kViolet-5);
     graph2D_AUL_vs_z_3->SetLineColor(kPink-5), graph2D_AUL_vs_z_3->SetMarkerColor(kPink-5);
     graph2D_AUL_vs_z_4->SetLineColor(kOrange-5), graph2D_AUL_vs_z_4->SetMarkerColor(kOrange-5);
+    graph2D_AUL_inject_1->SetMarkerStyle(25), graph2D_AUL_inject_2->SetMarkerStyle(25), graph2D_AUL_inject_3->SetMarkerStyle(25), graph2D_AUL_inject_4->SetMarkerStyle(25);
+    graph2D_AUL_inject_1->SetLineColor(kRed+1), graph2D_AUL_inject_2->SetLineColor(kRed+1), graph2D_AUL_inject_3->SetLineColor(kRed+1), graph2D_AUL_inject_4->SetLineColor(kRed+1);
+    graph2D_AUL_inject_1->SetMarkerColor(kRed+1), graph2D_AUL_inject_2->SetMarkerColor(kRed+1), graph2D_AUL_inject_3->SetMarkerColor(kRed+1), graph2D_AUL_inject_4->SetMarkerColor(kRed+1);
 
 
 
+    vector<TGraphErrors*> graphs_AUL_inject = {graph2D_AUL_inject_1,graph2D_AUL_inject_2,graph2D_AUL_inject_3,graph2D_AUL_inject_4};
     vector<TGraphErrors*> graphs_AUL_vs_z = {graph2D_AUL_vs_z_1,graph2D_AUL_vs_z_2,graph2D_AUL_vs_z_3,graph2D_AUL_vs_z_4};
     vector<string> titles_AUL_vs_z = {"0.0 < P_{hT} < 0.25 GeV","0.25 < P_{hT} < 0.5 GeV","0.5 < P_{hT} < 0.8 GeV","0.8 < P_{hT} < 1.4 GeV"};
 
@@ -2531,6 +2599,7 @@ void rgc_new_mc_analysis(const char* period) {
         graphs_AUL_vs_z[i]->SetTitle(Form("A_{UL}^{sin#Phi_{h}} vs z | %s | lepton frame; z; F_{UL}^{sin(#Phi_{h})}/F_{UU}",titles_AUL_vs_z[i].c_str()));
         graphs_AUL_vs_z[i]->Draw("AP");
         graphs_AUL_vs_z[i]->GetYaxis()->SetRangeUser(-0.3, 0.3);
+        graphs_AUL_inject[i]->Draw("P SAME");
 
 
         TLine* zeroLine = new TLine(graphs_AUL_vs_z[i]->GetXaxis()->GetXmin(), 0,graphs_AUL_vs_z[i]->GetXaxis()->GetXmax(), 0);
@@ -2540,7 +2609,7 @@ void rgc_new_mc_analysis(const char* period) {
         TLine* zeroLine_v = new TLine(graphs_AUL_vs_z[i]->GetXaxis()->GetXmin(), A_UL_sin_inject,graphs_AUL_vs_z[i]->GetXaxis()->GetXmax(), A_UL_sin_inject);
         zeroLine_v->SetLineStyle(2);
         zeroLine_v->SetLineColor(kRed+1);
-        zeroLine_v->Draw();
+        //zeroLine_v->Draw();
 
         c->Write();
     }
@@ -2644,6 +2713,10 @@ void rgc_new_mc_analysis(const char* period) {
     TGraphErrors* graph2D_AUL2_vs_z_2 = new TGraphErrors();
     TGraphErrors* graph2D_AUL2_vs_z_3 = new TGraphErrors();
     TGraphErrors* graph2D_AUL2_vs_z_4 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL2_inject_1 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL2_inject_2 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL2_inject_3 = new TGraphErrors();
+    TGraphErrors* graph2D_AUL2_inject_4 = new TGraphErrors();
     int pz_idx = 0, pz_idx_1 = 0, pz_idx_2 = 0, pz_idx_3 = 0, pz_idx_4 = 0;
     for(int z = 0; z < nbin_zPt; z++){
         if (vec_kaonp_xB_2d_zPt_mc[z].empty()) continue; // Skip empty bins
@@ -2661,6 +2734,18 @@ void rgc_new_mc_analysis(const char* period) {
             if(val < min_x) min_x = val;
         }
         double mean_z = sum_z / vec_kaonp_z_2d_zPt_mc[z].size();
+        double sum_pt = 0.0;
+        double sum_z2 = 0.0;
+        for (double val : vec_kaonp_Pt_2d_zPt_mc[z]) sum_pt += val;
+        double mean_pt = sum_pt / vec_kaonp_Pt_2d_zPt_mc[z].size();
+        for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
+        double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
+        
+        const double z0  = 0.4;
+        const double Pt0 = 0.5;
+        const double cz  = 0.8;
+        const double cPt = 0.5;
+        double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
         // Get AUL2 and error from vectors
         double aul_sin = AUL_2sin_2d_zPt_mc[z];
         double aul_sin_err = AUL_2sin_err_2d_zPt_mc[z];
@@ -2669,19 +2754,27 @@ void rgc_new_mc_analysis(const char* period) {
         pz_idx++;
         if(z < 7){
             graph2D_AUL2_vs_z_1->SetPoint(pz_idx_1, mean_z, aul_sin);
-            graph2D_AUL2_vs_z_1->SetPointError(pz_idx_1, 0.0, aul_sin_err); 
+            graph2D_AUL2_vs_z_1->SetPointError(pz_idx_1, 0.0, aul_sin_err);
+            graph2D_AUL2_inject_1->SetPoint(pz_idx_1, mean_z, A_UL_2sin_inject_dep);
+            graph2D_AUL2_inject_1->SetPointError(pz_idx_1, 0.0, 0.0); 
             pz_idx_1++;
         } else if (z < 14){
             graph2D_AUL2_vs_z_2->SetPoint(pz_idx_2, mean_z, aul_sin);
             graph2D_AUL2_vs_z_2->SetPointError(pz_idx_2, 0.0, aul_sin_err);
+            graph2D_AUL2_inject_2->SetPoint(pz_idx_2, mean_z, A_UL_2sin_inject_dep);
+            graph2D_AUL2_inject_2->SetPointError(pz_idx_2, 0.0, 0.0);
             pz_idx_2++;
         } else if (z < 21){
             graph2D_AUL2_vs_z_3->SetPoint(pz_idx_3, mean_z, aul_sin);
             graph2D_AUL2_vs_z_3->SetPointError(pz_idx_3, 0.0, aul_sin_err);
+            graph2D_AUL2_inject_3->SetPoint(pz_idx_3, mean_z, A_UL_2sin_inject_dep);
+            graph2D_AUL2_inject_3->SetPointError(pz_idx_3, 0.0, 0.0);   
             pz_idx_3++;
         } else if (z < 26){
             graph2D_AUL2_vs_z_4->SetPoint(pz_idx_4, mean_z, aul_sin);
             graph2D_AUL2_vs_z_4->SetPointError(pz_idx_4, 0.0, aul_sin_err);
+            graph2D_AUL2_inject_4->SetPoint(pz_idx_4, mean_z, A_UL_2sin_inject_dep);
+            graph2D_AUL2_inject_4->SetPointError(pz_idx_4, 0.0, 0.0);
             pz_idx_4++;
         }
     }
@@ -2690,8 +2783,13 @@ void rgc_new_mc_analysis(const char* period) {
     graph2D_AUL2_vs_z_2->SetLineColor(kViolet-5), graph2D_AUL2_vs_z_2->SetMarkerColor(kViolet-5);
     graph2D_AUL2_vs_z_3->SetLineColor(kPink-5), graph2D_AUL2_vs_z_3->SetMarkerColor(kPink-5);
     graph2D_AUL2_vs_z_4->SetLineColor(kOrange-5), graph2D_AUL2_vs_z_4->SetMarkerColor(kOrange-5);
+    graph2D_AUL2_inject_1->SetMarkerStyle(25), graph2D_AUL2_inject_2->SetMarkerStyle(25), graph2D_AUL2_inject_3->SetMarkerStyle(25), graph2D_AUL2_inject_4->SetMarkerStyle(25);
+    graph2D_AUL2_inject_1->SetLineColor(kRed+1), graph2D_AUL2_inject_2->SetLineColor(kRed+1), graph2D_AUL2_inject_3->SetLineColor(kRed+1), graph2D_AUL2_inject_4->SetLineColor(kRed+1);
+    graph2D_AUL2_inject_1->SetMarkerColor(kRed+1), graph2D_AUL2_inject_2->SetMarkerColor(kRed+1), graph2D_AUL2_inject_3->SetMarkerColor(kRed+1), graph2D_AUL2_inject_4->SetMarkerColor(kRed+1);
 
 
+
+    vector<TGraphErrors*> graphs_AUL2_inject = {graph2D_AUL2_inject_1,graph2D_AUL2_inject_2,graph2D_AUL2_inject_3,graph2D_AUL2_inject_4};
     vector<TGraphErrors*> graphs_AUL2_vs_z = {graph2D_AUL2_vs_z_1,graph2D_AUL2_vs_z_2,graph2D_AUL2_vs_z_3,graph2D_AUL2_vs_z_4};
     vector<string> titles_AUL2_vs_z = {"0.0 < P_{hT} < 0.25 GeV","0.25 < P_{hT} < 0.5 GeV","0.5 < P_{hT} < 0.8 GeV","0.8 < P_{hT} < 1.4 GeV"};
 
@@ -2703,6 +2801,7 @@ void rgc_new_mc_analysis(const char* period) {
         graphs_AUL2_vs_z[i]->SetTitle(Form("A_{UL}^{sin2#Phi_{h}} vs z | %s | lepton frame; z; F_{UL}^{sin(2#Phi_{h})}/F_{UU}",titles_AUL2_vs_z[i].c_str()));
         graphs_AUL2_vs_z[i]->Draw("AP");
         graphs_AUL2_vs_z[i]->GetYaxis()->SetRangeUser(-0.3, 0.3);
+        graphs_AUL2_inject[i]->Draw("P SAME");
 
         TLine* zeroLine = new TLine(graphs_AUL2_vs_z[i]->GetXaxis()->GetXmin(), 0,graphs_AUL2_vs_z[i]->GetXaxis()->GetXmax(), 0);
         zeroLine->SetLineStyle(2);
@@ -2711,7 +2810,7 @@ void rgc_new_mc_analysis(const char* period) {
         TLine* zeroLine_v = new TLine(graphs_AUL2_vs_z[i]->GetXaxis()->GetXmin(), A_UL_2sin_inject,graphs_AUL2_vs_z[i]->GetXaxis()->GetXmax(), A_UL_2sin_inject);
         zeroLine_v->SetLineStyle(2);
         zeroLine_v->SetLineColor(kRed+1);
-        zeroLine_v->Draw();
+        //zeroLine_v->Draw();
 
         c->Write();
     }
@@ -2727,7 +2826,7 @@ void rgc_new_mc_analysis(const char* period) {
     TGraphErrors* graph2D_ALL_vs_xB_2 = new TGraphErrors();
     TGraphErrors* graph2D_ALL_vs_xB_3 = new TGraphErrors();
     TGraphErrors* graph2D_ALL_vs_xB_4 = new TGraphErrors();
-    //TGraphErrors* graph2D_corr_sin = new TGraphErrors();
+    //TGraphErrors* graph2D_ALL_inject = new TGraphErrors();
     int pll_idx1 = 0, pll_idx1_1 = 0, pll_idx1_2 = 0, pll_idx1_3 = 0, pll_idx1_4 = 0;
     for(int x = 0; x < nbin_xQ2; x++){
         if (vec_kaonp_xB_2d_mc[x].empty()) continue; // Skip empty bins
@@ -2819,7 +2918,10 @@ void rgc_new_mc_analysis(const char* period) {
     TGraphErrors* graph2D_ALL0_vs_z_2 = new TGraphErrors();
     TGraphErrors* graph2D_ALL0_vs_z_3 = new TGraphErrors();
     TGraphErrors* graph2D_ALL0_vs_z_4 = new TGraphErrors();
-    //TGraphErrors* graph2D_corr_sin = new TGraphErrors();
+    TGraphErrors* graph2D_ALL0_inject_1 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL0_inject_2 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL0_inject_3 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL0_inject_4 = new TGraphErrors();
     int pzll0_idx = 0, pzll0_idx_1 = 0, pzll0_idx_2 = 0, pzll0_idx_3 = 0, pzll0_idx_4 = 0;
     for(int z = 0; z < nbin_zPt; z++){
         if (vec_kaonp_xB_2d_zPt_mc[z].empty()) continue; // Skip empty bins
@@ -2837,6 +2939,19 @@ void rgc_new_mc_analysis(const char* period) {
             if(val < min_x) min_x = val;
         }
         double mean_z = sum_z / vec_kaonp_z_2d_zPt_mc[z].size();
+        double sum_pt = 0.0;
+        double sum_z2 = 0.0;
+        for (double val : vec_kaonp_Pt_2d_zPt_mc[z]) sum_pt += val;
+        double mean_pt = sum_pt / vec_kaonp_Pt_2d_zPt_mc[z].size();
+        for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
+        double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
+        
+        const double z0  = 0.4;
+        const double Pt0 = 0.5;
+        const double cz  = 0.8;
+        const double cPt = 0.5;
+        double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        //cout << "bin: " << z << ", mean_z: " << mean_z2 << ", mean_pt: " << mean_pt << ", A_LL_0_inject_dep: " << A_LL_0_inject_dep << endl;
         double all_0 = ALL_0_2d_zPt_mc[z];
         double all_0_err = ALL_0_err_2d_zPt_mc[z];
         //double all_0 = 0;
@@ -2847,18 +2962,26 @@ void rgc_new_mc_analysis(const char* period) {
         if(z < 7){
             graph2D_ALL0_vs_z_1->SetPoint(pzll0_idx_1, mean_z, all_0);
             graph2D_ALL0_vs_z_1->SetPointError(pzll0_idx_1, 0.0, all_0_err); // No x error
+            graph2D_ALL0_inject_1->SetPoint(pzll0_idx_1, mean_z, A_LL_0_inject_dep);
+            graph2D_ALL0_inject_1->SetPointError(pzll0_idx_1, 0.0, 0.0);
             pzll0_idx_1++;
         } else if (z < 14){
             graph2D_ALL0_vs_z_2->SetPoint(pzll0_idx_2, mean_z, all_0);
             graph2D_ALL0_vs_z_2->SetPointError(pzll0_idx_2, 0.0, all_0_err);
+            graph2D_ALL0_inject_2->SetPoint(pzll0_idx_2, mean_z, A_LL_0_inject_dep);
+            graph2D_ALL0_inject_2->SetPointError(pzll0_idx_2, 0.0, 0.0);
             pzll0_idx_2++;
         } else if (z < 21){
             graph2D_ALL0_vs_z_3->SetPoint(pzll0_idx_3, mean_z, all_0);
             graph2D_ALL0_vs_z_3->SetPointError(pzll0_idx_3, 0.0, all_0_err);
+            graph2D_ALL0_inject_3->SetPoint(pzll0_idx_3, mean_z, A_LL_0_inject_dep);
+            graph2D_ALL0_inject_3->SetPointError(pzll0_idx_3, 0.0, 0.0);
             pzll0_idx_3++;
         } else if (z < 26){
             graph2D_ALL0_vs_z_4->SetPoint(pzll0_idx_4, mean_z, all_0);
             graph2D_ALL0_vs_z_4->SetPointError(pzll0_idx_4, 0.0, all_0_err);
+            graph2D_ALL0_inject_4->SetPoint(pzll0_idx_4, mean_z, A_LL_0_inject_dep);
+            graph2D_ALL0_inject_4->SetPointError(pzll0_idx_4, 0.0, 0.0);
             pzll0_idx_4++;
         }
     }
@@ -2867,10 +2990,14 @@ void rgc_new_mc_analysis(const char* period) {
     graph2D_ALL0_vs_z_2->SetLineColor(kViolet-5), graph2D_ALL0_vs_z_2->SetMarkerColor(kViolet-5);
     graph2D_ALL0_vs_z_3->SetLineColor(kPink-5), graph2D_ALL0_vs_z_3->SetMarkerColor(kPink-5);
     graph2D_ALL0_vs_z_4->SetLineColor(kOrange-5), graph2D_ALL0_vs_z_4->SetMarkerColor(kOrange-5);
+    graph2D_ALL0_inject_1->SetMarkerStyle(25), graph2D_ALL0_inject_2->SetMarkerStyle(25), graph2D_ALL0_inject_3->SetMarkerStyle(25), graph2D_ALL0_inject_4->SetMarkerStyle(25);
+    graph2D_ALL0_inject_1->SetLineColor(kRed+1), graph2D_ALL0_inject_2->SetLineColor(kRed+1), graph2D_ALL0_inject_3->SetLineColor(kRed+1), graph2D_ALL0_inject_4->SetLineColor(kRed+1);
+    graph2D_ALL0_inject_1->SetMarkerColor(kRed+1), graph2D_ALL0_inject_2->SetMarkerColor(kRed+1), graph2D_ALL0_inject_3->SetMarkerColor(kRed+1), graph2D_ALL0_inject_4->SetMarkerColor(kRed+1);
 
 
 
     vector<TGraphErrors*> graphs_ALL0_vs_z = {graph2D_ALL0_vs_z_1,graph2D_ALL0_vs_z_2,graph2D_ALL0_vs_z_3,graph2D_ALL0_vs_z_4};
+    vector<TGraphErrors*> graphs_ALL0_inject = {graph2D_ALL0_inject_1,graph2D_ALL0_inject_2,graph2D_ALL0_inject_3,graph2D_ALL0_inject_4};
     vector<string> titles_ALL0_vs_z = {"0.0 < P_{hT} < 0.25 GeV","0.25 < P_{hT} < 0.5 GeV","0.5 < P_{hT} < 0.8 GeV","0.8 < P_{hT} < 1.4 GeV"};
 
     for (size_t i = 0; i < graphs_ALL0_vs_z.size(); ++i) {
@@ -2881,6 +3008,7 @@ void rgc_new_mc_analysis(const char* period) {
         graphs_ALL0_vs_z[i]->SetTitle(Form("A_{LL} vs z | %s | lepton frame; z; F_{LL}/F_{UU}",titles_ALL0_vs_z[i].c_str()));
         graphs_ALL0_vs_z[i]->Draw("AP");
         graphs_ALL0_vs_z[i]->GetYaxis()->SetRangeUser(-0.1, 0.8);
+        graphs_ALL0_inject[i]->Draw("P SAME");
 
         TLine* zeroLine = new TLine(graphs_ALL0_vs_z[i]->GetXaxis()->GetXmin(), 0,graphs_ALL0_vs_z[i]->GetXaxis()->GetXmax(), 0);
         zeroLine->SetLineStyle(2);
@@ -2889,7 +3017,7 @@ void rgc_new_mc_analysis(const char* period) {
         TLine* zeroLine_v = new TLine(graphs_ALL0_vs_z[i]->GetXaxis()->GetXmin(), A_LL_0_inject,graphs_ALL0_vs_z[i]->GetXaxis()->GetXmax(), A_LL_0_inject);
         zeroLine_v->SetLineStyle(2);
         zeroLine_v->SetLineColor(kRed+1);
-        zeroLine_v->Draw();
+        //zeroLine_v->Draw();
 
         c->Write();
     }
@@ -2990,6 +3118,10 @@ void rgc_new_mc_analysis(const char* period) {
     TGraphErrors* graph2D_ALL_cos_vs_z_2 = new TGraphErrors();
     TGraphErrors* graph2D_ALL_cos_vs_z_3 = new TGraphErrors();
     TGraphErrors* graph2D_ALL_cos_vs_z_4 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL_cos_inject_1 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL_cos_inject_2 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL_cos_inject_3 = new TGraphErrors();
+    TGraphErrors* graph2D_ALL_cos_inject_4 = new TGraphErrors();
     //TGraphErrors* graph2D_corr_sin = new TGraphErrors();
     int pzllcos_idx = 0, pzllcos_idx_1 = 0, pzllcos_idx_2 = 0, pzllcos_idx_3 = 0, pzllcos_idx_4 = 0;
     for(int z = 0; z < nbin_zPt; z++){
@@ -3008,6 +3140,20 @@ void rgc_new_mc_analysis(const char* period) {
             if(val < min_x) min_x = val;
         }
         double mean_z = sum_z / vec_kaonp_z_2d_zPt_mc[z].size();
+
+        double sum_pt = 0.0;
+        double sum_z2 = 0.0;
+        for (double val : vec_kaonp_Pt_2d_zPt_mc[z]) sum_pt += val;
+        double mean_pt = sum_pt / vec_kaonp_Pt_2d_zPt_mc[z].size();
+        for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
+        double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
+        
+        const double z0  = 0.4;
+        const double Pt0 = 0.5;
+        const double cz  = 0.8;
+        const double cPt = 0.5;
+        double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        //cout << "bin: " << z << ", mean_z: " << mean_z2 << ", mean_pt: " << mean_pt << ", A_inject_dep: " << A_LL_cos_inject_dep << endl;
         // Get ALL_cos and error from vectors
         double all_cos = ALL_cos_2d_zPt_mc[z];
         double all_cos_err = ALL_cos_err_2d_zPt_mc[z];
@@ -3020,18 +3166,26 @@ void rgc_new_mc_analysis(const char* period) {
         if(z < 7){
             graph2D_ALL_cos_vs_z_1->SetPoint(pzllcos_idx_1, mean_z, all_cos);
             graph2D_ALL_cos_vs_z_1->SetPointError(pzllcos_idx_1, 0.0, all_cos_err); // No x error
+            graph2D_ALL_cos_inject_1->SetPoint(pzllcos_idx_1, mean_z, A_LL_cos_inject_dep);
+            graph2D_ALL_cos_inject_1->SetPointError(pzllcos_idx_1, 0.0, 0.0);
             pzllcos_idx_1++;
         } else if (z < 14){
             graph2D_ALL_cos_vs_z_2->SetPoint(pzllcos_idx_2, mean_z, all_cos);
             graph2D_ALL_cos_vs_z_2->SetPointError(pzllcos_idx_2, 0.0, all_cos_err);
+            graph2D_ALL_cos_inject_2->SetPoint(pzllcos_idx_2, mean_z, A_LL_cos_inject_dep);
+            graph2D_ALL_cos_inject_2->SetPointError(pzllcos_idx_2, 0.0, 0.0);
             pzllcos_idx_2++;
         } else if (z < 21){
             graph2D_ALL_cos_vs_z_3->SetPoint(pzllcos_idx_3, mean_z, all_cos);
             graph2D_ALL_cos_vs_z_3->SetPointError(pzllcos_idx_3, 0.0, all_cos_err);
+            graph2D_ALL_cos_inject_3->SetPoint(pzllcos_idx_3, mean_z, A_LL_cos_inject_dep);
+            graph2D_ALL_cos_inject_3->SetPointError(pzllcos_idx_3, 0.0, 0.0);
             pzllcos_idx_3++;
         } else if (z < 26){
             graph2D_ALL_cos_vs_z_4->SetPoint(pzllcos_idx_4, mean_z, all_cos);
             graph2D_ALL_cos_vs_z_4->SetPointError(pzllcos_idx_4, 0.0, all_cos_err);
+            graph2D_ALL_cos_inject_4->SetPoint(pzllcos_idx_4, mean_z, A_LL_cos_inject_dep);
+            graph2D_ALL_cos_inject_4->SetPointError(pzllcos_idx_4, 0.0, 0.0);
             pzllcos_idx_4++;
         }
     }
@@ -3040,9 +3194,13 @@ void rgc_new_mc_analysis(const char* period) {
     graph2D_ALL_cos_vs_z_2->SetLineColor(kViolet-5), graph2D_ALL_cos_vs_z_2->SetMarkerColor(kViolet-5);
     graph2D_ALL_cos_vs_z_3->SetLineColor(kPink-5), graph2D_ALL_cos_vs_z_3->SetMarkerColor(kPink-5);
     graph2D_ALL_cos_vs_z_4->SetLineColor(kOrange-5), graph2D_ALL_cos_vs_z_4->SetMarkerColor(kOrange-5);
+    graph2D_ALL_cos_inject_1->SetMarkerStyle(25), graph2D_ALL_cos_inject_2->SetMarkerStyle(25), graph2D_ALL_cos_inject_3->SetMarkerStyle(25), graph2D_ALL_cos_inject_4->SetMarkerStyle(25);
+    graph2D_ALL_cos_inject_1->SetLineColor(kRed+1), graph2D_ALL_cos_inject_2->SetLineColor(kRed+1), graph2D_ALL_cos_inject_3->SetLineColor(kRed+1), graph2D_ALL_cos_inject_4->SetLineColor(kRed+1);
+    graph2D_ALL_cos_inject_1->SetMarkerColor(kRed+1), graph2D_ALL_cos_inject_2->SetMarkerColor(kRed+1), graph2D_ALL_cos_inject_3->SetMarkerColor(kRed+1), graph2D_ALL_cos_inject_4->SetMarkerColor(kRed+1);
 
 
 
+    vector<TGraphErrors*> graphs_ALL_cos_inject = {graph2D_ALL_cos_inject_1,graph2D_ALL_cos_inject_2,graph2D_ALL_cos_inject_3,graph2D_ALL_cos_inject_4};
     vector<TGraphErrors*> graphs_ALL_cos_vs_z = {graph2D_ALL_cos_vs_z_1,graph2D_ALL_cos_vs_z_2,graph2D_ALL_cos_vs_z_3,graph2D_ALL_cos_vs_z_4};
     vector<string> titles_ALL_cos_vs_z = {"0.0 < P_{hT} < 0.25 GeV","0.25 < P_{hT} < 0.5 GeV","0.5 < P_{hT} < 0.8 GeV","0.8 < P_{hT} < 1.4 GeV"};
 
@@ -3054,6 +3212,7 @@ void rgc_new_mc_analysis(const char* period) {
         graphs_ALL_cos_vs_z[i]->SetTitle(Form("A_{LL}^{cos#Phi_{h}} vs z | %s | lepton frame; z; F_{LL}^{cos#Phi_{h}}/F_{UU}",titles_ALL_cos_vs_z[i].c_str()));
         graphs_ALL_cos_vs_z[i]->Draw("AP");
         graphs_ALL_cos_vs_z[i]->GetYaxis()->SetRangeUser(-0.4, 0.4);
+        graphs_ALL_cos_inject[i]->Draw("P SAME");
 
         TLine* zeroLine = new TLine(graphs_ALL_cos_vs_z[i]->GetXaxis()->GetXmin(), 0,graphs_ALL_cos_vs_z[i]->GetXaxis()->GetXmax(), 0);
         zeroLine->SetLineStyle(2);
@@ -3062,7 +3221,7 @@ void rgc_new_mc_analysis(const char* period) {
         TLine* zeroLine_v = new TLine(graphs_ALL_cos_vs_z[i]->GetXaxis()->GetXmin(), A_LL_cos_inject,graphs_ALL_cos_vs_z[i]->GetXaxis()->GetXmax(), A_LL_cos_inject);
         zeroLine_v->SetLineStyle(2);
         zeroLine_v->SetLineColor(kRed+1);
-        zeroLine_v->Draw();
+        //zeroLine_v->Draw();
 
         c->Write();
     }
@@ -3162,6 +3321,10 @@ void rgc_new_mc_analysis(const char* period) {
     TGraphErrors* graph2D_ALU_sin_vs_z_2 = new TGraphErrors();
     TGraphErrors* graph2D_ALU_sin_vs_z_3 = new TGraphErrors();
     TGraphErrors* graph2D_ALU_sin_vs_z_4 = new TGraphErrors();
+    TGraphErrors* graph2D_ALU_sin_inject_1 = new TGraphErrors();
+    TGraphErrors* graph2D_ALU_sin_inject_2 = new TGraphErrors();
+    TGraphErrors* graph2D_ALU_sin_inject_3 = new TGraphErrors();
+    TGraphErrors* graph2D_ALU_sin_inject_4 = new TGraphErrors();
     //TGraphErrors* graph2D_corr_sin = new TGraphErrors();
     int pzlusin_idx = 0, pzlusin_idx_1 = 0, pzlusin_idx_2 = 0, pzlusin_idx_3 = 0, pzlusin_idx_4 = 0;
     for(int z = 0; z < nbin_zPt; z++){
@@ -3180,6 +3343,19 @@ void rgc_new_mc_analysis(const char* period) {
             if(val < min_x) min_x = val;
         }
         double mean_z = sum_z / vec_kaonp_z_2d_zPt_mc[z].size();
+
+        double sum_pt = 0.0;
+        double sum_z2 = 0.0;
+        for (double val : vec_kaonp_Pt_2d_zPt_mc[z]) sum_pt += val;
+        double mean_pt = sum_pt / vec_kaonp_Pt_2d_zPt_mc[z].size();
+        for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
+        double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
+        
+        const double z0  = 0.4;
+        const double Pt0 = 0.5;
+        const double cz  = 0.8;
+        const double cPt = 0.5;
+        double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
         // Get ALU_sin and error from vectors
         double alu_sin = ALU_sin_2d_zPt_mc[z];
         double alu_sin_err = ALU_sin_err_2d_zPt_mc[z];
@@ -3191,18 +3367,26 @@ void rgc_new_mc_analysis(const char* period) {
         if(z < 7){
             graph2D_ALU_sin_vs_z_1->SetPoint(pzlusin_idx_1, mean_z, alu_sin);
             graph2D_ALU_sin_vs_z_1->SetPointError(pzlusin_idx_1, 0.0, alu_sin_err); // No x error
+            graph2D_ALU_sin_inject_1->SetPoint(pzlusin_idx_1, mean_z, A_LU_sin_inject_dep);
+            graph2D_ALU_sin_inject_1->SetPointError(pzlusin_idx_1, 0.0, 0.0);
             pzlusin_idx_1++;
         } else if (z < 14){
             graph2D_ALU_sin_vs_z_2->SetPoint(pzlusin_idx_2, mean_z, alu_sin);
             graph2D_ALU_sin_vs_z_2->SetPointError(pzlusin_idx_2, 0.0, alu_sin_err);
+            graph2D_ALU_sin_inject_2->SetPoint(pzlusin_idx_2, mean_z, A_LU_sin_inject_dep);
+            graph2D_ALU_sin_inject_2->SetPointError(pzlusin_idx_2, 0.0, 0.0);
             pzlusin_idx_2++;
         } else if (z < 21){
             graph2D_ALU_sin_vs_z_3->SetPoint(pzlusin_idx_3, mean_z, alu_sin);
             graph2D_ALU_sin_vs_z_3->SetPointError(pzlusin_idx_3, 0.0, alu_sin_err);
+            graph2D_ALU_sin_inject_3->SetPoint(pzlusin_idx_3, mean_z, A_LU_sin_inject_dep);
+            graph2D_ALU_sin_inject_3->SetPointError(pzlusin_idx_3, 0.0, 0.0);
             pzlusin_idx_3++;
         } else if (z < 26){
             graph2D_ALU_sin_vs_z_4->SetPoint(pzlusin_idx_4, mean_z, alu_sin);
             graph2D_ALU_sin_vs_z_4->SetPointError(pzlusin_idx_4, 0.0, alu_sin_err);
+            graph2D_ALU_sin_inject_4->SetPoint(pzlusin_idx_4, mean_z, A_LU_sin_inject_dep);
+            graph2D_ALU_sin_inject_4->SetPointError(pzlusin_idx_4, 0.0, 0.0);
             pzlusin_idx_4++;
         }
     }
@@ -3211,9 +3395,13 @@ void rgc_new_mc_analysis(const char* period) {
     graph2D_ALU_sin_vs_z_2->SetLineColor(kViolet-5), graph2D_ALU_sin_vs_z_2->SetMarkerColor(kViolet-5);
     graph2D_ALU_sin_vs_z_3->SetLineColor(kPink-5), graph2D_ALU_sin_vs_z_3->SetMarkerColor(kPink-5);
     graph2D_ALU_sin_vs_z_4->SetLineColor(kOrange-5), graph2D_ALU_sin_vs_z_4->SetMarkerColor(kOrange-5);
+    graph2D_ALU_sin_inject_1->SetMarkerStyle(25), graph2D_ALU_sin_inject_2->SetMarkerStyle(25), graph2D_ALU_sin_inject_3->SetMarkerStyle(25), graph2D_ALU_sin_inject_4->SetMarkerStyle(25);
+    graph2D_ALU_sin_inject_1->SetLineColor(kRed+1), graph2D_ALU_sin_inject_2->SetLineColor(kRed+1), graph2D_ALU_sin_inject_3->SetLineColor(kRed+1), graph2D_ALU_sin_inject_4->SetLineColor(kRed+1);
+    graph2D_ALU_sin_inject_1->SetMarkerColor(kRed+1), graph2D_ALU_sin_inject_2->SetMarkerColor(kRed+1), graph2D_ALU_sin_inject_3->SetMarkerColor(kRed+1), graph2D_ALU_sin_inject_4->SetMarkerColor(kRed+1);
 
 
 
+    vector<TGraphErrors*> graphs_ALU_sin_inject = {graph2D_ALU_sin_inject_1,graph2D_ALU_sin_inject_2,graph2D_ALU_sin_inject_3,graph2D_ALU_sin_inject_4};
     vector<TGraphErrors*> graphs_ALU_sin_vs_z = {graph2D_ALU_sin_vs_z_1,graph2D_ALU_sin_vs_z_2,graph2D_ALU_sin_vs_z_3,graph2D_ALU_sin_vs_z_4};
     vector<string> titles_ALU_sin_vs_z = {"0.0 < P_{hT} < 0.25 GeV","0.25 < P_{hT} < 0.5 GeV","0.5 < P_{hT} < 0.8 GeV","0.8 < P_{hT} < 1.4 GeV"};
 
@@ -3225,6 +3413,7 @@ void rgc_new_mc_analysis(const char* period) {
         graphs_ALU_sin_vs_z[i]->SetTitle(Form("A_{LU}^{sin#Phi_{h}} vs z | %s | lepton frame; z; F_{LU}^{sin#Phi_{h}}/F_{UU}",titles_ALU_sin_vs_z[i].c_str()));
         graphs_ALU_sin_vs_z[i]->Draw("AP");
         graphs_ALU_sin_vs_z[i]->GetYaxis()->SetRangeUser(-0.2, 0.2);
+        graphs_ALU_sin_inject[i]->Draw("P SAME");
 
         TLine* zeroLine = new TLine(graphs_ALU_sin_vs_z[i]->GetXaxis()->GetXmin(), 0,graphs_ALU_sin_vs_z[i]->GetXaxis()->GetXmax(), 0);
         zeroLine->SetLineStyle(2);

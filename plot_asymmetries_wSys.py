@@ -6,7 +6,7 @@ from matplotlib.patches import Patch
 import os
 
 # cartella output
-outdir = "ASYMMETRIES_plot_w_sys"
+outdir = "ASYMMETRIES_plot_w_sys_var"
 os.makedirs(outdir, exist_ok=True)
 
 # ------------------------------------------------------------------
@@ -24,8 +24,8 @@ fall22.columns = fall22.columns.str.strip()
 # analyze_toys.py: contiene Total_sys_final, gia' testato per significativita'
 # sui toy e sommato in quadratura -- qui non si ricalcola piu' nulla)
 # ------------------------------------------------------------------
-sys_sum22 = pd.read_csv("TOY_diagnostics3/toy_summary_summer22.csv", skipinitialspace=True)
-sys_fall22 = pd.read_csv("TOY_diagnostics3/toy_summary_fall22.csv", skipinitialspace=True)
+sys_sum22 = pd.read_csv("TOY_diagnostics2/toy_summary_summer22.csv", skipinitialspace=True)
+sys_fall22 = pd.read_csv("TOY_diagnostics2/toy_summary_fall22.csv", skipinitialspace=True)
 
 sys_sum22.columns = sys_sum22.columns.str.strip()
 sys_fall22.columns = sys_fall22.columns.str.strip()

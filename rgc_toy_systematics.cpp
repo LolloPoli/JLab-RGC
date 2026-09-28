@@ -621,7 +621,7 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 500;
+    int toy_step = 10;
     for (int s = 0; s < toy_step; s++){
         TString csv_filename_zPt_test = Form("toy_model2/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
@@ -1135,11 +1135,11 @@ void rgc_toy_systematics(const char* period) {
 
         // fall22 ALU = 0
         // summer22 ALU = 0.05 and w
-        double A_UL_sin_inject  = 0.0;
-        double A_UL_2sin_inject = 0.0;
-        double A_LL_0_inject    = 0.0;
-        double A_LL_cos_inject  = 0.0;
-        double A_LU_sin_inject = 0.0;
+        double A_UL_sin_inject  = 0.1;
+        double A_UL_2sin_inject = 0.1;
+        double A_LL_0_inject    = 0.4;
+        double A_LL_cos_inject  = 0.1;
+        double A_LU_sin_inject = 0.05;
         double dilution = 0.25;
         double beam_pol = 0.84;
         double PbPt = 0.71;
@@ -1168,14 +1168,30 @@ void rgc_toy_systematics(const char* period) {
             fake_Ptarget_vec[i] = fake_Pt;
             double bootw = rng.PoissonD(1.0);
 
+            // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
+            // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
+
+            const double z0  = 0.4;
+            const double Pt0 = 0.5;
+            const double cz  = 0.8;
+            const double cPt = 0.5;
+
+            double A_UL_sin_inject_dep = A_UL_sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+
+            // ========================================================================================
+
             double eps = kaonp_epsilon_mc, y = kaonp_y_mc;
             double A = (y*y)/(2*(1-eps));
             double B = A*eps, C = A*sqrt(1-eps*eps);
             double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
 
-            double UL_mod = (V/A)*A_UL_sin_inject*sin(kaonp_Phi_h_mc) + (B/A)*A_UL_2sin_inject*sin(2*kaonp_Phi_h_mc);
-            double LL_mod = (C/A)*A_LL_0_inject + (W/A)*A_LL_cos_inject*cos(kaonp_Phi_h_mc);
-            double LU_mod = (W/A) * A_LU_sin_inject * sin(kaonp_Phi_h_mc);
+            double UL_mod = (V/A) * A_UL_sin_inject_dep*sin(kaonp_Phi_h_mc) + (B/A) * A_UL_2sin_inject_dep*sin(2*kaonp_Phi_h_mc); // added dependences
+            double LL_mod = (C/A) * A_LL_0_inject_dep + (W/A) * A_LL_cos_inject_dep*cos(kaonp_Phi_h_mc);
+            double LU_mod = (W/A) * A_LU_sin_inject_dep*sin(kaonp_Phi_h_mc);
 
             //double f = 1.0 + helicity_mc*LU_mod + dilution*fake_Pt*beam_pol*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  
             double f = 1.0 + helicity_mc*beam_pol*LU_mod + dilution*fake_Pt*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  // beampol
@@ -1244,14 +1260,29 @@ void rgc_toy_systematics(const char* period) {
             fake_Ptarget_vec_reco[i] = fake_Pt;
             double bootw = rng.PoissonD(1.0);
 
+            // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
+
+            const double z0  = 0.4;
+            const double Pt0 = 0.5;
+            const double cz  = 0.8;
+            const double cPt = 0.5;
+
+            double A_UL_sin_inject_dep  = A_UL_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+
+            // ========================================================================================
+
             double eps = kaonp_epsilon_recoMC, y = kaonp_y_recoMC;
             double A = (y*y)/(2*(1-eps));
             double B = A*eps, C = A*sqrt(1-eps*eps);
             double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
 
-            double UL_mod = (V/A)*A_UL_sin_inject*sin(kaonp_Phi_h_recoMC) + (B/A)*A_UL_2sin_inject*sin(2*kaonp_Phi_h_recoMC);
-            double LL_mod = (C/A)*A_LL_0_inject + (W/A)*A_LL_cos_inject*cos(kaonp_Phi_h_recoMC);
-            double LU_mod = (W/A) * A_LU_sin_inject * sin(kaonp_Phi_h_recoMC);
+            double UL_mod = (V/A)*A_UL_sin_inject_dep*sin(kaonp_Phi_h_recoMC) + (B/A)*A_UL_2sin_inject_dep*sin(2*kaonp_Phi_h_recoMC);
+            double LL_mod = (C/A)*A_LL_0_inject_dep + (W/A)*A_LL_cos_inject_dep*cos(kaonp_Phi_h_recoMC);
+            double LU_mod = (W/A) * A_LU_sin_inject_dep * sin(kaonp_Phi_h_recoMC);
 
             //double f = 1.0 + helicity*LU_mod + dilution*fake_Pt*UL_mod + dilution*helicity*fake_Pt*LL_mod;   
             double f = 1.0 + helicity*beam_pol*LU_mod + dilution*fake_Pt*UL_mod + dilution*beam_pol*helicity*fake_Pt*LL_mod;  // beampol 
