@@ -26,7 +26,8 @@ namespace fs = std::filesystem;
 gROOT->SetBatch(kTRUE);
 // to download the data
 // rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/lustre24/expphy/volatile/clas12/lpolizzi/sidis/rgc/spring23/NH3/kaon_plus/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/spring23_NH3_data
-// rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/lustre24/expphy/volatile/clas12/lpolizzi/sidis/rgc/summer22/ND3/kaon_plus/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/sum22_ND3_data
+// rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/lustre24/expphy/volatile/clas12/lpolizzi/sidis/rgc/fall22/NH3/kaon_plus/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/fall22_NH3_data
+// rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/lustre24/expphy/volatile/clas12/lpolizzi/sidis/rgc/summer22/NH3/kaon_plus/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/sum22_NH3_data
 // rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/lustre24/expphy/volatile/clas12/lpolizzi/sidis/rgc/mc_output/fall22_pos/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/MC_summer22_pos
 // 
 double MeanVect(const vector<double>& v) {
@@ -599,9 +600,11 @@ void rgc_analysis_1D(const char* period, const char* target) {
     chainKaonP.SetBranchAddress("el_theta", &electron_Theta);
     chainKaonP.SetBranchAddress("el_phi", &electron_Phi);
     chainKaonP.SetBranchAddress("el_W", &electron_W);
+    chainKaonP.SetBranchAddress("el_vz", &electron_vz);
     chainKaonP.SetBranchAddress("kaon_px", &kaonp_px);
     chainKaonP.SetBranchAddress("kaon_py", &kaonp_py);
     chainKaonP.SetBranchAddress("kaon_pz", &kaonp_pz);
+    chainKaonP.SetBranchAddress("kaon_vz", &kaonp_vz);
     chainKaonP.SetBranchAddress("kaon_mom", &kaonp_Ph);
     chainKaonP.SetBranchAddress("beta", &kaonp_beta);
     chainKaonP.SetBranchAddress("Polarization", &kaonp_Pol);
@@ -610,7 +613,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     chainKaonP.SetBranchAddress("epsilon", &kaonp_epsilon);
     chainKaonP.SetBranchAddress("W", &kaonp_W);
     chainKaonP.SetBranchAddress("Q2", &kaonp_Q2);
-    chainKaonP.SetBranchAddress("xF", &kaonp_xF);
+    chainKaonP.SetBranchAddress("xF_new", &kaonp_xF);
     chainKaonP.SetBranchAddress("xB", &kaonp_xB);
     chainKaonP.SetBranchAddress("y", &kaonp_y);
     chainKaonP.SetBranchAddress("z", &kaonp_z);
@@ -723,14 +726,24 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TH1D beam_helicity ("_beam_helicity", "helicity | 1.2 < Mom < 8 GeV ; helicity (z axis); count", 10, -2, 2);
     TH1D kp_phi_plus ("_kp_phi_plus", "#Phi_{h} when spin = 1 | 1.2 < Mom < 8 GeV ; #Phi_{h} [Rad]; count", 200, -M_PI, M_PI);
     TH1D kp_phi_minus ("_kp_phi_minus", "#Phi_{h} when spin = -1 | 1.2 < Mom < 8 GeV ; #Phi_{h} [Rad]; count", 200, -M_PI, M_PI);
+    TH1D plot_el_vz ("_el_vz", "electron vertex z | 1.2 < Mom < 8 GeV ; vz [cm]; count", 300, -10, 3);
+    TH1D plot_kp_vz ("_kp_vz", "kaon vertex z | 1.2 < Mom < 8 GeV ; vz [cm]; count", 300, -20, 10);
+    TH1D plot_el_W ("_W", "W | 1.2 < Mom < 8 GeV ; W [GeV]; count", 300, 1.95, 4);
+    TH1D plot_el_y ("_y", "y | 1.2 < Mom < 8 GeV ; y; count", 300, 0.2, 0.85);
+    TH1D plot_el_Q2 ("_Q2", "Q^{2} | 1.2 < Mom < 8 GeV ; Q^{2} [GeV^{2}]; count", 300, 0.95, 10);
+    TH1D plot_el_xB ("_xB", "x_{B} | 1.2 < Mom < 8 GeV ; x_{B}; count", 300, 0, 0.8);
+    TH1D plot_kp_xF ("_xF", "x_{F} | 1.2 < Mom < 8 GeV ; x_{F}; count", 300, 0, 0.85);
+    TH1D plot_kp_z ("_z", "z | 1.2 < Mom < 8 GeV ; z; count", 300, 0.2, 1);
+    TH1D plot_kp_PhT ("_Pt", "P_{hT} | 1.2 < Mom < 8 GeV ; P_{hT} [GeV]; count", 300, 0, 1.4);
+    TH1D plot_kp_Phi_h ("_phi_h", "#Phi_{h} | 1.2 < Mom < 8 GeV ; #Phi_{h} [Rad]; count", 300, -M_PI, M_PI);
     //TH1D kp_rich_chi2 ("_rich_chi2", "#chi^{2} RICH PID ; #chi^{2}; count", 300, -3, 3);
     TH2D kp_MomVsPhT ("_MomVsPhT", "Correlation Mom vs P_{hT}  |  K+  | with EventBuilder + RICH ; P_{hT} [GeV]; Mom [GeV]", nbin, 0, 1.2, nbin, 1, 8);
     TH2D kp_MomVsXb ("_MomVsXb", "Correlation Mom vs x_{B}  |  K+  | with EventBuilder + RICH ; x_{B}; Mom [GeV]", nbin, 0, 0.8, nbin, 1, 8);
     TH2D kp_MomVsXf ("_MomVsXf", "Correlation Mom vs x_{F}  |  K+  | with EventBuilder + RICH ; x_{F}; Mom [GeV]", nbin, 0, 0.5, nbin, 1, 8);
     TH2D kp_MomVsZ ("_MomVsZ", "Correlation Mom vs z  |  K+  | with EventBuilder + RICH ; z; Mom [GeV]", nbin, 0.2, 1.0, nbin, 1, 8);
     TH2D kp_MomVsY ("_MomVsY", "Correlation Mom vs Y  |  K+  | with EventBuilder + RICH ; y; Mom [GeV]", nbin, 0.2, 0.8, nbin, 1, 8);
-    TH2D kp_MomVsEta ("_MomVsEta", "Correlation Mom vs Eta  |  K+  | with EventBuilder + RICH ; Eta; Mom [GeV]", nbin, 1.5, 3.0, nbin, 1, 8);
-    TH2D kp_MomVsTheta ("_MomVsTheta", "Correlation Mom vs Theta  |  K+  | with EventBuilder + RICH ; Mom [GeV]; Theta [Rad]", nbin, 1, 8, nbin, 0.09, 0.4);
+    TH2D kp_MomVsEta ("_MomVsEta", "Correlation Mom vs Eta  |  K+  | with EventBuilder + RICH ; Eta; Mom [GeV]", nbin, 1.0, 3.0, nbin, 1, 8);
+    TH2D kp_MomVsTheta ("_MomVsTheta", "Correlation Mom vs Theta  |  K+  | with EventBuilder + RICH ; Mom [GeV]; Theta [Rad]", nbin, 1, 8, nbin, 0.09, 0.75);
     TH2D kp_MomVsPhi_h ("_MomVsPhi_h", "Correlation Mom vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; Mom [GeV]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 1, 8);
     TH2D kp_MomVsMx ("_MomVsMx", "correlation Mom vs M_{x} | K+ |; Mom [GeV]; M_{x} [GeV]", nbin, 1, 8, nbin, 0.6, 3.5);
     TH2D kp_MomVsBeta ("_MomVsBeta", "correlation Mom vs #beta | K+ |; Mom [GeV]; #beta", nbin, 1, 8, nbin, 0.88, 1.02);
@@ -745,7 +758,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TH2D kp_Q2VsPhT ("_Q2VsPhT", "Correlation Q^{2} vs P_{hT}  |  K+  | with EventBuilder + RICH ; P_{hT} [GeV]; Q^{2} [GeV^{2}]", nbin, 0, 1.2, nbin, 1, 10);
     TH2D kp_Q2VsZ ("_Q2VsZ", "Correlation Q^{2} vs z  |  K+  | with EventBuilder + RICH ; z; Q^{2} [GeV^{2}]", nbin, 0.2, 1.0, nbin, 1, 10);
     TH2D kp_Q2VsY ("_Q2VsY", "Correlation Q^{2} vs Y  |  K+  | with EventBuilder + RICH ; y; Q^{2} [GeV^{2}]", nbin, 0.2, 0.8, nbin, 0.9, 10);
-    TH2D kp_Q2VsEta ("_Q2VsEta", "Correlation Q^{2} vs Eta  |  K+  | with EventBuilder + RICH ; Eta; Q^{2} [GeV^{2}]", nbin, 1.5, 3.0, nbin, 1, 10);
+    TH2D kp_Q2VsEta ("_Q2VsEta", "Correlation Q^{2} vs Eta  |  K+  | with EventBuilder + RICH ; Eta; Q^{2} [GeV^{2}]", nbin, 1.0, 3.0, nbin, 1, 10);
     TH2D kp_Q2VsPhi_h ("_Q2VsPhi_h", "Correlation Q^{2} vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; Q^{2} [GeV^{2}]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 1, 10);
     TH2D kp_Q2vsSinTheta ("_Q2vsSinTheta", "Correlation sin(#theta_{#gamma}) vs Q^{2}  |  K+  | with EventBuilder + RICH ; Q^{2} [GeV^{2}]; sin#theta", nbin, 1, 10, nbin, 0.0, 0.6);
     TH2D kp_Q2VsEps ("_Q2VsEps", "Correlation Q^{2} vs #epsilon  |  K+  | with EventBuilder + RICH ; #epsilon; Q^{2} [GeV^{2}]", nbin, 0.3, 1.0, nbin, 1, 10);
@@ -753,7 +766,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     // PhT
     TH2D kp_PhTvsZ ("_PhTvsZ", "Correlation P_{hT} vs z  |  K+  | with EventBuilder + RICH ; z; P_{hT} [GeV]", nbin, 0.2, 1, nbin, 0, 1.4);
     TH2D kp_PhTvsXb ("_PhTvsXb", "Correlation P_{hT} vs x_{B}  |  K+  | with EventBuilder + RICH ; x_{B}; P_{hT} [GeV]", nbin, 0, 0.8, nbin, 0, 1.2);
-    TH2D kp_PhTvsEta ("_PhTvsEta", "Correlation P_{hT} vs Eta  |  K+  | with EventBuilder + RICH ; Eta; P_{hT} [GeV]", nbin, 1.5, 3.0, nbin, 0, 1.2);
+    TH2D kp_PhTvsEta ("_PhTvsEta", "Correlation P_{hT} vs Eta  |  K+  | with EventBuilder + RICH ; Eta; P_{hT} [GeV]", nbin, 1.0, 3.0, nbin, 0, 1.2);
     TH2D kp_PhTvsPhi_h ("_PhTvsPhi_h", "Correlation P_{hT} vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; P_{hT} [GeV]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 0, 1.2);
     TH2D kp_PhTvsSinTheta ("_PhTvsSinTheta", "Correlation sin(#theta_{#gamma}) vs P_{hT}  |  K+  | with EventBuilder + RICH ; P_{hT} [GeV]; sin#theta", nbin, 0.0, 1.2, nbin, 0.0, 0.6);
     TH2D kp_PhTVsEps ("_PhTVsEps", "Correlation P_{hT} vs #epsilon  |  K+  | with EventBuilder + RICH ; #epsilon; P_{hT} [GeV]", nbin, 0.3, 1.0, nbin, 0, 1.2);
@@ -761,7 +774,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     // Z
     TH2D kp_zVsXb ("_zVsXb", "Correlation Z vs x_{B}  |  K+  | with EventBuilder + RICH ; x_{B}; z", nbin, 0, 0.8, nbin, 0.2, 1.0);
     TH2D kp_zVsXf ("_zVsXf", "Correlation Z vs x_{F}  |  K+  | with EventBuilder + RICH ; x_{F}; z", nbin, 0, 0.6, nbin, 0.2, 1.0);
-    TH2D kp_zVsEta ("_zVsEta", "Correlation Z vs Eta  |  K+  | with EventBuilder + RICH ; Eta; z", nbin, 1.5, 3.0, nbin, 0.2, 1.0);
+    TH2D kp_zVsEta ("_zVsEta", "Correlation Z vs Eta  |  K+  | with EventBuilder + RICH ; Eta; z", nbin, 1.0, 3.0, nbin, 0.2, 1.0);
     TH2D kp_zVsPhi_h ("_zVsPhi_h", "Correlation Z vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; z", nbin, -TMath::Pi(), TMath::Pi(), nbin, 0.2, 1.0);
     TH2D kp_zvsSinTheta ("_zvsSinTheta", "Correlation sin(#theta_{#gamma}) vs z  |  K+  | with EventBuilder + RICH ; z; sin#theta", nbin, 0.2, 1.0, nbin, 0.0, 0.6);
     TH2D kp_zvsCosPhi ("_zvsCosPhi", "Correlation cos(#Phi_{h}) vs z  |  K+  | with EventBuilder + RICH ; z; cos_{#Phi_{h}}", nbin, 0.2, 1.0, nbin, -1, 1);
@@ -770,14 +783,14 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TH2D kp_zVsMx ("_zVsMx", "Correlation z vs M_{x}  |  K+  | with EventBuilder + RICH ; z; M_{x} [GeV]", nbin, 0.2, 1.0, nbin, 0.3 , 3.5);
     //
     TH2D kp_xBvsY ("_xBvsY", "Correlation y vs x_{B}  |  K+  | with EventBuilder + RICH ; x_{B}; y", nbin, 0, 0.8, nbin, 0.2, 0.8);
-    TH2D kp_xBvsEta ("_xBvsEta", "Correlation #eta vs x_{B}  |  K+  | with EventBuilder + RICH ; #eta; x_{B}", nbin, 1.5, 3.0, nbin, 0.0, 0.8);
+    TH2D kp_xBvsEta ("_xBvsEta", "Correlation #eta vs x_{B}  |  K+  | with EventBuilder + RICH ; #eta; x_{B}", nbin, 1.0, 3.0, nbin, 0.0, 0.8);
     TH2D kp_xBvsSinTheta ("_xBvsSinTheta", "Correlation sin(#theta_{#gamma}) vs x_{B}  |  K+  | with EventBuilder + RICH ; x_{B}; sin#theta", nbin, 0, 0.8, nbin, 0.0, 0.6);
     TH2D kp_xBvsCosPhi ("_xBvsCosPhi", "Correlation cos(#Phi_{h}) vs x_{B}  |  K+  | with EventBuilder + RICH ; x_{B}; cos_{#Phi_{h}}", nbin, 0.0, 0.8, nbin, -1, 1);
     TH2D kp_xBVsEps ("_xBVsEps", "Correlation x_{B} vs #epsilon  |  K+  | with EventBuilder + RICH ; #epsilon; x_{B}", nbin, 0.3, 1.0, nbin, 0, 0.8);
     TH2D kp_xBVsMx ("_xBVsMx", "Correlation x_{B} vs M_{x}  |  K+  | with EventBuilder + RICH ; x_{B}; M_{x} [GeV]", nbin, 0.0, 0.8, nbin, 0.3 , 3.5);
     // Angles
-    TH2D kp_ThetaVsPhi_h ("_ThetaVsPhi_h", "Correlation Theta vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; Theta [Rad]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 0.1, 0.4);
-    TH2D kp_ThetaVsPhi_Lab ("_ThetaVsPhi_Lab", "Correlation #theta vs #Phi_{Lab} | K+ | with EventBuilder + RICH ; #Phi_{Lab} [Rad]; #theta [Rad]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 0.05, 0.4);
+    TH2D kp_ThetaVsPhi_h ("_ThetaVsPhi_h", "Correlation Theta vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; Theta [Rad]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 0.1, 0.75);
+    TH2D kp_ThetaVsPhi_Lab ("_ThetaVsPhi_Lab", "Correlation #theta vs #Phi_{Lab} | K+ | with EventBuilder + RICH ; #Phi_{Lab} [Rad]; #theta [Rad]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 0.05, 0.75);
     TH2D kp_PxVsPy ("_PxVsPy", "Correlation P_{x} vs P_{y}  |  K+  | with EventBuilder + RICH ; P_{x} [GeV]; P_{y} [GeV]", nbin, -2, 2, nbin, -2, 2);
     TH2D el_PxVsPy ("el_PxVsPy", "Correlation P_{x} vs P_{y}  |  e-  | with EventBuilder + RICH ; P_{x} [GeV]; P_{y} [GeV]", nbin, -2, 2, nbin, -2, 2);
     
@@ -1061,6 +1074,16 @@ void rgc_analysis_1D(const char* period, const char* target) {
                 target_pol.Fill(kaonp_Pol);
                 target_spin.Fill(proton_spin);
                 beam_helicity.Fill(helicity);
+                plot_el_vz.Fill(electron_vz);
+                plot_kp_vz.Fill(kaonp_vz);
+                plot_el_W.Fill(electron_W);
+                plot_el_y.Fill(kaonp_y);
+                plot_el_Q2.Fill(kaonp_Q2);
+                plot_el_xB.Fill(kaonp_xB);
+                plot_kp_xF.Fill(kaonp_xF);
+                plot_kp_z.Fill(kaonp_z);
+                plot_kp_PhT.Fill(kaonp_PhT);
+                plot_kp_Phi_h.Fill(kaonp_Phi_h);
                 if(proton_spin == 1) kp_phi_plus.Fill(kaonp_Phi_h);
                 if(proton_spin == -1) kp_phi_minus.Fill(kaonp_Phi_h);
                 // Mom
@@ -1364,6 +1387,16 @@ void rgc_analysis_1D(const char* period, const char* target) {
     beam_helicity.Write();
     kp_phi_plus.Write();
     kp_phi_minus.Write();
+    plot_el_vz.Write();
+    plot_kp_vz.Write();
+    plot_el_W.Write();
+    plot_el_y.Write();
+    plot_el_Q2.Write();
+    plot_el_xB.Write();
+    plot_kp_xF.Write();
+    plot_kp_z.Write();
+    plot_kp_PhT.Write();
+    plot_kp_Phi_h.Write();
 
     std::vector<TH2D*> hists_kp = {
         &kp_MomVsPhT, &kp_MomVsXb, &kp_MomVsXf, &kp_MomVsZ, &kp_MomVsY, &kp_MomVsEta,

@@ -140,7 +140,9 @@ def plot_campaign_with_sys(df, sys_df, campaign_label, color, marker, fname_suff
             elif asym == "ALL":
                 ax.set_ylim(-0.1, 0.8)
             elif asym == "ALL_cosPhi":
-                ax.set_ylim(-0.5, 0.5)
+                ax.set_ylim(-0.6, 0.6)
+            elif asym == "AUL_sin2Phi":
+                ax.set_ylim(-0.4, 0.5)
             else:
                 ax.set_ylim(-0.3, 0.3)
 

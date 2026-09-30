@@ -734,7 +734,7 @@ void rgc_mc_analysis(const char* period) {
     chainKaonP.SetBranchAddress("epsilon", &kaonp_epsilon);
     chainKaonP.SetBranchAddress("W", &kaonp_W);
     chainKaonP.SetBranchAddress("Q2", &kaonp_Q2);
-    chainKaonP.SetBranchAddress("xF", &kaonp_xF);
+    chainKaonP.SetBranchAddress("xF_new", &kaonp_xF);
     chainKaonP.SetBranchAddress("xB", &kaonp_xB);
     chainKaonP.SetBranchAddress("y", &kaonp_y);
     chainKaonP.SetBranchAddress("z", &kaonp_z);
@@ -799,7 +799,7 @@ void rgc_mc_analysis(const char* period) {
     MC_chainKaonP.SetBranchAddress("gamma_mc", &kaonp_gamma_mc);
     MC_chainKaonP.SetBranchAddress("epsilon_mc", &kaonp_epsilon_mc);
     MC_chainKaonP.SetBranchAddress("Q2_mc", &kaonp_Q2_mc);
-    MC_chainKaonP.SetBranchAddress("xF_mc", &kaonp_xF_mc);
+    MC_chainKaonP.SetBranchAddress("xF_mc_new", &kaonp_xF_mc);
     MC_chainKaonP.SetBranchAddress("xB_mc", &kaonp_xB_mc);
     MC_chainKaonP.SetBranchAddress("y_mc", &kaonp_y_mc);
     MC_chainKaonP.SetBranchAddress("z_mc", &kaonp_z_mc);
@@ -833,7 +833,7 @@ void rgc_mc_analysis(const char* period) {
     treeKaonP.Branch("C_LSA_TSA", &C_LSA_TSA, "C_LSA_TSA/D");
     treeKaonP.Branch("W", &kaonp_W, "W/D");
     treeKaonP.Branch("Q2", &kaonp_Q2, "Q2/D");
-    treeKaonP.Branch("xF", &kaonp_xF, "xF/D");
+    treeKaonP.Branch("xF_new", &kaonp_xF, "xF/D");
     treeKaonP.Branch("xB", &kaonp_xB, "xB/D");
     treeKaonP.Branch("y", &kaonp_y, "y/D");
     treeKaonP.Branch("z", &kaonp_z, "z/D");

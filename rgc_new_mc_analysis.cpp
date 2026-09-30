@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 gROOT->SetBatch(kTRUE);
 // to download the data
 // rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/lustre24/expphy/volatile/clas12/lpolizzi/sidis/rgc/mc_output/fall22_neg/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/MC_fall22_neg
-// rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/work/clas12/lpolizzi/rgc/sum22_mc/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/MC_fall22_neg
+// rsync -avz -e "ssh -J lpolizzi@login.jlab.org" lpolizzi@ifarm:/work/clas12/lpolizzi/rgc/fall22_mc/ /Users/lorenzopolizzi/Desktop/PhD/JLAB/rgc/MC_fall22_neg
 // 
 double MeanVect(const vector<double>& v) {
     if (v.empty()) return 0.0;
@@ -167,7 +167,7 @@ double AUL_loglike_withLL(const double* Aul,
         double V = ((y*y)/(2*(1-eps))) * sqrt(2.0 * eps * (1.0 + eps));
         double W = ((y*y)/(2*(1-eps))) * sqrt(2.0 * eps * (1.0 - eps));
 
-       // --- UU modulation ---
+        // --- UU modulation ---
         const double UU_mod = (V/A) * A_UU_cos1 * cos(phi_h[i]) + (B/A) * A_UU_cos2 * cos(2.0 * phi_h[i]);
         // --- LU modulation ---
         const double LU_mod = (W/A) * A_LU_sin * sin(phi_h[i]);
@@ -730,7 +730,7 @@ void rgc_new_mc_analysis(const char* period) {
     MC_chainKaonP.SetBranchAddress("gamma_mc", &kaonp_gamma_mc);
     MC_chainKaonP.SetBranchAddress("epsilon_mc", &kaonp_epsilon_mc);
     MC_chainKaonP.SetBranchAddress("Q2_mc", &kaonp_Q2_mc);
-    MC_chainKaonP.SetBranchAddress("xF_mc", &kaonp_xF_mc);
+    MC_chainKaonP.SetBranchAddress("xF_mc_new", &kaonp_xF_mc);
     MC_chainKaonP.SetBranchAddress("xB_mc", &kaonp_xB_mc);
     MC_chainKaonP.SetBranchAddress("y_mc", &kaonp_y_mc);
     MC_chainKaonP.SetBranchAddress("z_mc", &kaonp_z_mc);
@@ -764,7 +764,7 @@ void rgc_new_mc_analysis(const char* period) {
     treeKaonP.Branch("C_LSA_TSA", &C_LSA_TSA, "C_LSA_TSA/D");
     treeKaonP.Branch("W", &kaonp_W, "W/D");
     treeKaonP.Branch("Q2", &kaonp_Q2, "Q2/D");
-    treeKaonP.Branch("xF", &kaonp_xF, "xF/D");
+    treeKaonP.Branch("xF_new", &kaonp_xF, "xF/D");
     treeKaonP.Branch("xB", &kaonp_xB, "xB/D");
     treeKaonP.Branch("y", &kaonp_y, "y/D");
     treeKaonP.Branch("z", &kaonp_z, "z/D");

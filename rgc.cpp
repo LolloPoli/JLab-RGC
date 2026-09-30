@@ -88,7 +88,7 @@ void LoadPolarization(const std::string& filename) {
 double BeamPolarization_file(Int_t run){
   if (polariz_map.empty()) {
     //std::cout << "Caricamento tabella polarizzazione..." << std::endl;
-    LoadPolarization("spring23_NH3_goodRuns.txt"); // fall and summer 
+    LoadPolarization("fall2022_NH3_goodRuns.txt"); // fall and summer 
   }
   return polariz_map[run];
 }
@@ -268,7 +268,7 @@ bool KinematicPID_Vertex(double vz, int torus, int pid){
   bool signal = false;
   if(torus == -1){  // INBENDING
     if(pid > 20){
-      if(-10 < vz && vz < 1) signal = true; // maybe better -10, 2
+      if(-8 < vz && vz < 2.5) signal = true; // summer 22 -10 to +1, while fall22 -8 to +2.5
     } 
     if(pid < 20){
       if(-9 < vz && vz < 1) signal = true; // summer -9, 1, fall and spring use -7.5, 2.5
@@ -363,6 +363,7 @@ void rgc(const char* fileList){
     double beam_helicity;
     double kaon_tt;
     double photon_en;
+    double kaon_xF_new;
 
     
     // VECTOR CMS
@@ -378,7 +379,7 @@ void rgc(const char* fileList){
     Kaon_tree.Branch("gamma_E", &photon_en);
     Kaon_tree.Branch("s", &kaon_s), Kaon_tree.Branch("clas_chi2", &kaon_chi2pid, "clas_chi2/D");
     Kaon_tree.Branch("clas_pid", &clas_pid), Kaon_tree.Branch("beta", &kaon_beta);
-    Kaon_tree.Branch("Q2", &kaon_Q2), Kaon_tree.Branch("xB", &kaon_xB), Kaon_tree.Branch("xF", &kaon_xF), Kaon_tree.Branch("y", &kaon_y), Kaon_tree.Branch("z", &kaon_z), Kaon_tree.Branch("-t", &kaon_tt);
+    Kaon_tree.Branch("Q2", &kaon_Q2), Kaon_tree.Branch("xB", &kaon_xB), Kaon_tree.Branch("xF", &kaon_xF), Kaon_tree.Branch("xF_new", &kaon_xF_new), Kaon_tree.Branch("y", &kaon_y), Kaon_tree.Branch("z", &kaon_z), Kaon_tree.Branch("-t", &kaon_tt);
     Kaon_tree.Branch("kaon_px", &kaon_px, "kaon_px/D"), Kaon_tree.Branch("kaon_py", &kaon_py, "kaon_py/D"), Kaon_tree.Branch("kaon_pz", &kaon_pz, "kaon_pz/D");
     Kaon_tree.Branch("kaon_mom", &kaon_mom), Kaon_tree.Branch("kaon_Pt", &kaon_Pt), Kaon_tree.Branch("Pt_over_zQ", &kaon_Pt_ratio);
     Kaon_tree.Branch("kaon_theta", &kaon_theta), Kaon_tree.Branch("kaon_phi_lab", &kaon_phi_lab), Kaon_tree.Branch("kaon_phi_h", &kaon_phi_h);
@@ -634,6 +635,17 @@ void rgc(const char* fileList){
                     TLorentzVector kaon_cms_4v = kp_4v;
                     kaon_cms_4v.Boost(-beta_cms_kaon);
                     kaon_xF = (2 * kaon_cms_4v.Pz()) / sqrt(kaon_s);
+                    // new xF in gammaN frame
+                    TLorentzVector gammaP = q + target;
+                    TVector3 boost = gammaP.BoostVector();
+                    TLorentzVector kaon_star = kp_4v;
+                    TLorentzVector q_star = q;
+                    kaon_star.Boost(-boost);
+                    q_star.Boost(-boost);
+                    // Longitudinal kaon momentum with respect to the virtual-photon direction
+                    double pL_star = kaon_star.Vect().Dot(q_star.Vect().Unit());
+                    double W_star = gammaP.M();
+                    kaon_xF_new = 2.0 * pL_star / W_star;
                     //kaon_polariz = BeamPolarization(N_run, true);
                     kaon_polariz = BeamPolarization_file(N_run);
                     kaon_vz = kp->par()->getVz();
@@ -699,7 +711,7 @@ void rgc(const char* fileList){
                     kaon_epsilon = (1- kaon_y - 0.25 * pow(kaon_gamma, 2) * pow(kaon_y, 2))/(1 - kaon_y + 0.5 * pow(kaon_y,2) + 0.25*pow(kaon_gamma,2)*pow(kaon_y,2));
                     //if(kaon_y <= 0.8 && kaon_mom >= 1 && kaon_z >= 0.2 && kaon_xF > 0){
                     if(HadronPID_Q2(kaon_Q2) && HadronPID_DC(kaon_edge1, kaon_edge2, kaon_edge3, -1) && kaon_y <= 0.8 && kaon_mom >= 1 &&
-                    HadronPID_Chi2Pid(kaon_chi2pid) && KinematicPID_Vertex(kaon_vz, torus, 321) && kaon_z >= 0.2 && kaon_xF > 0){
+                    HadronPID_Chi2Pid(kaon_chi2pid) && KinematicPID_Vertex(kaon_vz, torus, 321) && kaon_z >= 0.2 && kaon_xF_new > 0){
                       //kp_rich_pmt_xy.Fill(kaon_rich_tr1_x, kaon_rich_tr1_y);
                       //kp_rich_aerogel_xy.Fill(kaon_rich_tr2_x, kaon_rich_tr2_y);
                       //kp_rich_aerogel_xy.Fill(kaon_rich_tr3_x, kaon_rich_tr3_y);

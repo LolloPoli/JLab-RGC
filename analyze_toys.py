@@ -7,7 +7,7 @@ import os
 # ------------------------------------------------------------------
 # configurazione
 # ------------------------------------------------------------------
-period = "fall22"          # cambia secondo il tuo caso
+period = "summer22"          # cambia secondo il tuo caso
 toy_dir = "toy_model2"
 outdir = "TOY_diagnostics2"
 os.makedirs(outdir, exist_ok=True)

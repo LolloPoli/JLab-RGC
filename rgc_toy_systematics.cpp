@@ -169,7 +169,7 @@ double AUL_loglike_withLL(const double* Aul,
         double V = ((y*y)/(2*(1-eps))) * sqrt(2.0 * eps * (1.0 + eps));
         double W = ((y*y)/(2*(1-eps))) * sqrt(2.0 * eps * (1.0 - eps));
 
-       // --- UU modulation ---
+        // --- UU modulation ---
         const double UU_mod = (V/A) * A_UU_cos1 * cos(phi_h[i]) + (B/A) * A_UU_cos2 * cos(2.0 * phi_h[i]);
         // --- LU modulation ---
         const double LU_mod = (W/A) * A_LU_sin * sin(phi_h[i]);
@@ -621,7 +621,7 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 10;
+    int toy_step = 1000;
     for (int s = 0; s < toy_step; s++){
         TString csv_filename_zPt_test = Form("toy_model2/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
@@ -663,7 +663,7 @@ void rgc_toy_systematics(const char* period) {
         chainKaonP.SetBranchAddress("epsilon_mc", &kaonp_epsilon_recoMC);
         chainKaonP.SetBranchAddress("W", &kaonp_W);
         chainKaonP.SetBranchAddress("Q2", &kaonp_Q2);
-        chainKaonP.SetBranchAddress("xF", &kaonp_xF);
+        chainKaonP.SetBranchAddress("xF_new", &kaonp_xF);
         chainKaonP.SetBranchAddress("xB", &kaonp_xB);
         chainKaonP.SetBranchAddress("y", &kaonp_y);
         chainKaonP.SetBranchAddress("y_mc", &kaonp_y_recoMC);
@@ -729,7 +729,7 @@ void rgc_toy_systematics(const char* period) {
         MC_chainKaonP.SetBranchAddress("gamma_mc", &kaonp_gamma_mc);
         MC_chainKaonP.SetBranchAddress("epsilon_mc", &kaonp_epsilon_mc);
         MC_chainKaonP.SetBranchAddress("Q2_mc", &kaonp_Q2_mc);
-        MC_chainKaonP.SetBranchAddress("xF_mc", &kaonp_xF_mc);
+        MC_chainKaonP.SetBranchAddress("xF_mc_new", &kaonp_xF_mc);
         MC_chainKaonP.SetBranchAddress("xB_mc", &kaonp_xB_mc);
         MC_chainKaonP.SetBranchAddress("y_mc", &kaonp_y_mc);
         MC_chainKaonP.SetBranchAddress("z_mc", &kaonp_z_mc);
