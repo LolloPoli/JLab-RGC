@@ -1750,7 +1750,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TCanvas* c_Aut2D_xB_2 = new TCanvas("Aul_sin_vs_xB_2d", "sin(#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
     //graph2D_AUL_vs_xB->Draw("A");
     TMultiGraph *mg_Aut2D_xB_2 = new TMultiGraph();
-    mg_Aut2D_xB_2->SetTitle("A_{UL}^{sin#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{UL}^{sin(#Phi_{h})}/F_{UU}");
+    mg_Aut2D_xB_2->SetTitle("F_{UL}^{sin#Phi_{h}}/F_{UU} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{UL}^{sin(#Phi_{h})}/F_{UU}");
     mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_1, "P");
     mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_2, "P");
     mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_3, "P");
@@ -2044,6 +2044,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         zeroLine->Draw();
 
         c->Write();
+        c->SaveAs(Form("PDF_directory/%s_AUL_sin_vs_z_PtBin_%zu.pdf",period, i+1));
     }
 
     for (size_t i = 0; i < graphs_DUL_vs_z.size(); ++i) {
@@ -2127,7 +2128,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         }
     }
 
-    graph2D_AUL2_vs_xB->SetTitle("A_{UL}^{sin2#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin); x_{B}; F_{UL}^{sin(2#Phi_{h})}/F_{UU}"); // #sqrt{2#epsilon(1+#epsilon)}
+    graph2D_AUL2_vs_xB->SetTitle("F_{UL}^{sin2#Phi_{h}}/F_{UU} vs x_{B} (x_{B}-Q^{2} bin); x_{B}; F_{UL}^{sin(2#Phi_{h})}/F_{UU}"); // #sqrt{2#epsilon(1+#epsilon)}
     graph2D_AUL2_vs_xB_1->SetMarkerStyle(20), graph2D_AUL2_vs_xB_2->SetMarkerStyle(20), graph2D_AUL2_vs_xB_3->SetMarkerStyle(20), graph2D_AUL2_vs_xB_4->SetMarkerStyle(20);
     graph2D_AUL2_vs_xB_1->SetLineColor(kAzure-5), graph2D_AUL2_vs_xB_1->SetMarkerColor(kAzure-5);
     graph2D_AUL2_vs_xB_2->SetLineColor(kViolet-5), graph2D_AUL2_vs_xB_2->SetMarkerColor(kViolet-5);
@@ -2140,7 +2141,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TCanvas* c_Aut2D2_xB_2 = new TCanvas("Aul_sin2_vs_xB_2d", "sin(2#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
     //graph2D_AUL2_vs_xB->Draw("A");
     TMultiGraph *mg_Aut2D2_xB_2 = new TMultiGraph();
-    mg_Aut2D2_xB_2->SetTitle("A_{UL}^{sin2#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{UL}^{sin(2#Phi_{h})}/F_{UU}"); // #sqrt{2#epsilon(1+#epsilon)}
+    mg_Aut2D2_xB_2->SetTitle("F_{UL}^{sin2#Phi_{h}}/F_{UU} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{UL}^{sin(2#Phi_{h})}/F_{UU}"); // #sqrt{2#epsilon(1+#epsilon)}
     mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_1, "P");
     mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_2, "P");
     mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_3, "P");
@@ -2342,6 +2343,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         zeroLine->Draw();
 
         c->Write();
+        c->SaveAs(Form("PDF_directory/%s_AUL_sin2_vs_z_PtBin_%zu.pdf",period, i+1));
     }
 
     for (size_t i = 0; i < graphs_DAUL2_vs_z.size(); ++i) {
@@ -2448,7 +2450,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TCanvas* c_All2D_xB_0 = new TCanvas("ALL_0_vs_xB_2d", "sin(#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
     //graph2D_ALL_vs_xB->Draw("A");
     TMultiGraph *mg_All2D_xB_0 = new TMultiGraph();
-    mg_All2D_xB_0->SetTitle("A_{LL} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{LL}/F_{UU}");
+    mg_All2D_xB_0->SetTitle("F_{LL}/F_{UU} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{LL}/F_{UU}");
     mg_All2D_xB_0->Add(graph2D_ALL_vs_xB_1, "P");
     mg_All2D_xB_0->Add(graph2D_ALL_vs_xB_2, "P");
     mg_All2D_xB_0->Add(graph2D_ALL_vs_xB_3, "P");
@@ -2592,6 +2594,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         zeroLine->Draw();
 
         c->Write();
+        c->SaveAs(Form("PDF_directory/%s_ALL_vs_z_PtBin_%zu.pdf",period, i+1));
     }
 
     for (size_t i = 0; i < graphs_DALL0_vs_z.size(); ++i) {
@@ -2694,7 +2697,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TCanvas* c_All2D_xB_cos = new TCanvas("ALL_cos_vs_xB_2d", "sin(#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
     //graph2D_ALL_cos_vs_xB->Draw("A");
     TMultiGraph *mg_All2D_xB_cos = new TMultiGraph();
-    mg_All2D_xB_cos->SetTitle("A_{LL}^{cos#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{LL}^{cos#Phi_{h}}/F_{UU}");
+    mg_All2D_xB_cos->SetTitle("F_{LL}^{cos#Phi_{h}}/F_{UU} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{LL}^{cos#Phi_{h}}/F_{UU}");
     mg_All2D_xB_cos->Add(graph2D_ALL_cos_vs_xB_1, "P");
     mg_All2D_xB_cos->Add(graph2D_ALL_cos_vs_xB_2, "P");
     mg_All2D_xB_cos->Add(graph2D_ALL_cos_vs_xB_3, "P");
@@ -2838,6 +2841,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         zeroLine->Draw();
 
         c->Write();
+        c->SaveAs(Form("PDF_directory/%s_ALL_cos_vs_z_PtBin_%zu.pdf",period, i+1));
     }
 
     for (size_t i = 0; i < graphs_DALL_cos_vs_z.size(); ++i) {
@@ -2945,7 +2949,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TCanvas* c_Alu2D_xB_sin = new TCanvas("ALU_sin_vs_xB_2d", "sin(#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
     //graph2D_ALU_sin_vs_xB->Draw("A");
     TMultiGraph *mg_Alu2D_xB_sin = new TMultiGraph();
-    mg_Alu2D_xB_sin->SetTitle("A_{LU}^{sin#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{LU}^{sin#Phi_{h}}/F_{UU}");
+    mg_Alu2D_xB_sin->SetTitle("F_{LU}^{sin#Phi_{h}}/F_{UU} vs x_{B} (x_{B}-Q^{2} bin) | lepton frame; x_{B}; F_{LU}^{sin#Phi_{h}}/F_{UU}");
     mg_Alu2D_xB_sin->Add(graph2D_ALU_sin_vs_xB_1, "P");
     mg_Alu2D_xB_sin->Add(graph2D_ALU_sin_vs_xB_2, "P");
     mg_Alu2D_xB_sin->Add(graph2D_ALU_sin_vs_xB_3, "P");
@@ -3089,6 +3093,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         zeroLine->Draw();
 
         c->Write();
+        c->SaveAs(Form("PDF_directory/%s_ALU_sin_vs_z_PtBin_%zu.pdf",period, i+1));
     }
 
     for (size_t i = 0; i < graphs_DALU_sin_vs_z.size(); ++i) {
@@ -3139,6 +3144,11 @@ void rgc_analysis_1D(const char* period, const char* target) {
 
 
     //outFile.Write();
+    c_Aut2D_xB_2->SaveAs(Form("PDF_directory/%s_AUL_sin_vs_xB_2d.pdf", period));
+    c_Aut2D2_xB_2->SaveAs(Form("PDF_directory/%s_AUL_sin2_vs_xB_2d.pdf", period));
+    c_All2D_xB_0->SaveAs(Form("PDF_directory/%s_ALL_vs_xB_2d.pdf", period));
+    c_All2D_xB_cos->SaveAs(Form("PDF_directory/%s_ALL_cos_vs_xB_2d.pdf", period));
+    c_Alu2D_xB_sin->SaveAs(Form("PDF_directory/%s_ALU_sin_vs_xB_2d.pdf", period));
     //treeKaonP.Write("", TObject::kOverwrite);
     csvFile.close();
     outFile.Close();

@@ -621,8 +621,8 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 1000;
-    for (int s = 0; s < toy_step; s++){
+    int toy_step = 1399;
+    for (int s = 1000; s < toy_step; s++){
         TString csv_filename_zPt_test = Form("toy_model2/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
         //std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());

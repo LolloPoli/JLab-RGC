@@ -136,7 +136,7 @@ def plot_campaign_with_sys(df, sys_df, campaign_label, color, marker, fname_suff
             ax.axhline(0, color="black", linestyle="--", linewidth=1, alpha=0.6)
 
             if asym == "ALU_sinPhi":
-                ax.set_ylim(-0.15, 0.15)
+                ax.set_ylim(-0.2, 0.2)
             elif asym == "ALL":
                 ax.set_ylim(-0.1, 0.8)
             elif asym == "ALL_cosPhi":
