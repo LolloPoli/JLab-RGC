@@ -574,9 +574,12 @@ void rgc_analysis_1D(const char* period, const char* target) {
     // creo un output root 
     TString outputFile = Form("plot_%s_1D_rgc_%s_kaonp.root", target, period);
     double torus = -1;
-    TString csv_filename = Form("output_RGC_%s_asymmetries_%s.csv", target, period);
+    TString csv_filename = Form("RECO_CSV/output_RGC_%s_asymmetries_%s.csv", target, period);
+    TString csv_filename_xQ2 = Form("RECO_CSV/output_RGC_%s_asymmetries_%s_xQ2.csv", target, period);
     std::ofstream csvFile(csv_filename.Data());
     csvFile << "bin_zPt, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, ALU_sinPhi, ALU_sinPhi_err\n";
+    std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
+    csvFile_xQ2 << "bin_xQ2, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, ALU_sinPhi, ALU_sinPhi_err\n";
 
     TFile outFile(outputFile.Data(), "RECREATE");  // File di output ROOT
     TTree treeKaonP("Kaon+", "");
@@ -3129,6 +3132,22 @@ void rgc_analysis_1D(const char* period, const char* target) {
         ALL_0_2d_zPt[i] << " , " << ALL_0_err_2d_zPt[i]  << " , " << ALL_cos_2d_zPt[i]  << " , " << ALL_cos_err_2d_zPt[i]  << " , " << ALU_sin_2d_zPt[i]  << " , " << ALU_sin_err_2d_zPt[i] << endl;
     }
 
+    for (int i = 0; i < nbin_xQ2; i++){
+        double sum_z = 0.0, sum_xB = 0.0, sum_Q2 = 0.0, sum_Pt = 0.0, sum_eps = 0.0;
+        for (double val_z : vec_kaonp_z_2d[i]) sum_z += val_z;
+        double mean_z = sum_z / vec_kaonp_z_2d[i].size();
+        for (double val_xB : vec_kaonp_xB_2d[i]) sum_xB += val_xB;
+        double mean_xB = sum_xB / vec_kaonp_xB_2d[i].size();
+        for (double val_Q2 : vec_kaonp_Q2_2d[i]) sum_Q2 += val_Q2;
+        double mean_Q2 = sum_Q2 / vec_kaonp_Q2_2d[i].size();
+        for (double val_Pt : vec_kaonp_Pt_2d[i]) sum_Pt += val_Pt;
+        double mean_Pt = sum_Pt / vec_kaonp_Pt_2d[i].size();
+        for (double valeps : vec_kaonp_eps_2d[i]) sum_eps += valeps;
+        double mean_eps = sum_eps / vec_kaonp_eps_2d[i].size();
+        csvFile_xQ2 << i+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << " , " << AUL_sin_2d[i] << " , " << AUL_sin_err_2d[i] << " , " << AUL_2sin_2d[i] << " , " << AUL_2sin_err_2d[i] << " , " <<
+        ALL_0_2d[i] << " , " << ALL_0_err_2d[i]  << " , " << ALL_cos_2d[i]  << " , " << ALL_cos_err_2d[i]  << " , " << ALU_sin_2d[i]  << " , " << ALU_sin_err_2d[i] << endl;
+    }
+
     for (int z = 0; z < nbin_zPt; z++){
         double Npp = vec_Npp_2d_zPt[z].size();
         double Npm = vec_Npm_2d_zPt[z].size();
@@ -3151,8 +3170,9 @@ void rgc_analysis_1D(const char* period, const char* target) {
     c_Alu2D_xB_sin->SaveAs(Form("PDF_directory/%s_ALU_sin_vs_xB_2d.pdf", period));
     //treeKaonP.Write("", TObject::kOverwrite);
     csvFile.close();
+    csvFile_xQ2.close();
     outFile.Close();
     //chain.Close();
 
-    cout << "ROOT output file: " << outputFile << " and csv: " << csv_filename << endl;
+    cout << "ROOT output file: " << outputFile << " and csv: " << csv_filename << " & " << csv_filename_xQ2 << endl;
 }

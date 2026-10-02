@@ -138,7 +138,6 @@ double AUL_loglike_withLL(const double* Aul,
                           const vector<double>& Ptarget,     // target polarization
                           const vector<double>& helicity,    // beam helicity (+1 / -1)
                           const vector<double>& bootw, 
-                          double r_local,
                           bool use_spinstate_for_helicity = true,
                           const char* campaign = "fall22")
 {
@@ -621,17 +620,21 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 1399;
-    for (int s = 1000; s < toy_step; s++){
-        TString csv_filename_zPt_test = Form("toy_model2/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
+    int toy_step = 1;
+    for (int s = 0; s < toy_step; s++){
+        TString csv_filename_zPt_test = Form("toy_model/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
+        TString csv_filename_xQ2_test = Form("toy_model/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
         //std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
         //std::ofstream csvFile_zPt(csv_filename_zPt.Data());
         std::ofstream csvFile_zPt_test(csv_filename_zPt_test.Data());
-        //csvFile << " n_events, binxBQ2, bin_zPt, mean_xB, mean_Q2, mean_z, mean_PhT, epsilon, efficiency, eff_binom_err, PID_sys, PID_sys_err, Purity_sys, Purity_sys_err,Acc_sys, Acc_sys_err, Bin_mig_sys, Bin_mig_sys_err, Phih_sys_sinx, Phih_sys_sinx_err, Phih_sys_sin2x, Phih_sys_sin2x_err, Phih_sys_cosx, Phih_sys_cosx_err, Phih_sys_cos2x, Phih_sys_cos2x_err, Auu_cos, Auu_cos_err, Auu_cos2, Auu_cos2_err, Auu_cont_sinx, Auu_cont_sin2x\n";
+        std::ofstream csvFile_xQ2_test(csv_filename_xQ2_test.Data());
         //csvFile_xQ2 << " n_events, binxBQ2, bin_zPt, mean_xB, mean_Q2, mean_z, mean_PhT, epsilon, efficiency, eff_binom_err, PID_sys, PID_sys_err, Purity_sys, Purity_sys_err, Acc_sys, Acc_sys_err, Bin_mig_sys, Bin_mig_sys_err, Phih_sys_sinx, Phih_sys_sinx_err, Phih_sys_sin2x, Phih_sys_sin2x_err, Phih_sys_cosx, Phih_sys_cosx_err, Phih_sys_cos2x, Phih_sys_cos2x_err, Auu_cos, Auu_cos_err, Auu_cos2, Auu_cos2_err, Auu_cont_sinx, Auu_cont_sin2x\n";
         //csvFile_zPt << " n_events, binxBQ2, bin_zPt, mean_xB, mean_Q2, mean_z, mean_PhT, epsilon, efficiency, eff_binom_err, PID_sys, PID_sys_err, Purity_sys, Purity_sys_err, Acc_sys, Acc_sys_err, Bin_mig_sys, Bin_mig_sys_err\n";
         csvFile_zPt_test << "n_events,binxBQ2,bin_zPt,mean_xB,mean_Q2,mean_z,mean_PhT,epsilon,"
+                << "modulation,"
+                << "Acc_sys,Acc_sys_err,PID_sys,PID_sys_err,Purity_sys,Purity_sys_err,Bin_mig_sys,Bin_mig_sys_err\n";
+        csvFile_xQ2_test << "n_events,binxBQ2,bin_xQ2,mean_xB,mean_Q2,mean_z,mean_PhT,epsilon,"
                 << "modulation,"
                 << "Acc_sys,Acc_sys_err,PID_sys,PID_sys_err,Purity_sys,Purity_sys_err,Bin_mig_sys,Bin_mig_sys_err\n";
 
@@ -779,50 +782,50 @@ void rgc_toy_systematics(const char* period) {
         vector<vector<double>> vec_kaonp_phih_plus_2d_mc(nbin_xQ2);
         vector<vector<double>> vec_kaonp_phih_minus_2d_mc(nbin_xQ2);
         // allID
-        vector<vector<double>> vec_kaonp_phih_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_helicity_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_2phih_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_z_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_Pt_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_xB_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_Q2_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_y_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_pol_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_eps_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_spin_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_sintheta_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_phih_plus_2d_all_ID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_phih_minus_2d_all_ID(nbin_zPt);
+        vector<vector<double>> vec_kaonp_phih_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_helicity_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_2phih_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_z_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_Pt_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_xB_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_Q2_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_y_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_pol_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_eps_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_spin_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_sintheta_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_phih_plus_2d_all_ID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_phih_minus_2d_all_ID(nbin_xQ2);
         // preID
-        vector<vector<double>> vec_kaonp_phih_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_helicity_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_2phih_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_z_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_Pt_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_xB_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_Q2_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_y_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_pol_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_eps_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_spin_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_sintheta_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_phih_plus_2d_preID(nbin_zPt);
-        vector<vector<double>> vec_kaonp_phih_minus_2d_preID(nbin_zPt);
+        vector<vector<double>> vec_kaonp_phih_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_helicity_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_2phih_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_z_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_Pt_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_xB_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_Q2_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_y_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_pol_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_eps_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_spin_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_sintheta_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_phih_plus_2d_preID(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_phih_minus_2d_preID(nbin_xQ2);
         // TRUE
-        vector<vector<double>> vec_kaonp_phih_2d_true(nbin_zPt);
-        vector<vector<double>> vec_helicity_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_2phih_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_z_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_Pt_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_xB_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_Q2_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_y_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_pol_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_eps_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_spin_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_sintheta_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_phih_plus_2d_true(nbin_zPt);
-        vector<vector<double>> vec_kaonp_phih_minus_2d_true(nbin_zPt);
+        vector<vector<double>> vec_kaonp_phih_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_helicity_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_2phih_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_z_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_Pt_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_xB_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_Q2_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_y_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_pol_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_eps_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_spin_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_sintheta_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_phih_plus_2d_true(nbin_xQ2);
+        vector<vector<double>> vec_kaonp_phih_minus_2d_true(nbin_xQ2);
         // zPt bins
         // RECO
         vector<vector<double>> vec_kaonp_phih_2d_zPt(nbin_zPt);
@@ -1171,16 +1174,23 @@ void rgc_toy_systematics(const char* period) {
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
             // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
 
-            const double z0  = 0.4;
-            const double Pt0 = 0.5;
-            const double cz  = 0.8;
-            const double cPt = 0.5;
+            const double z0   = 0.4;
+            const double Pt0  = 0.5;
+            const double xB0  = 0.3;
+            const double Q20  = 4.0;
 
-            double A_UL_sin_inject_dep = A_UL_sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+            const double cz   = 0.8;
+            const double cPt  = 0.5;
+            const double cxB  = 0.8;
+            const double cQ2  = 0.08;   // 1/GeV^2
+
+            double kin_dep = (1.0 + cz  * (kaonp_z_mc - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0)) * (1.0 + cxB * (kaonp_xB_mc  - xB0)) * (1.0 + cQ2 * (kaonp_Q2_mc  - Q20));
+
+            double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
+            double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
 
             // ========================================================================================
 
@@ -1262,16 +1272,23 @@ void rgc_toy_systematics(const char* period) {
 
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
 
-            const double z0  = 0.4;
-            const double Pt0 = 0.5;
-            const double cz  = 0.8;
-            const double cPt = 0.5;
+            const double z0   = 0.4;
+            const double Pt0  = 0.5;
+            const double xB0  = 0.3;
+            const double Q20  = 4.0;
 
-            double A_UL_sin_inject_dep  = A_UL_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            const double cz   = 0.8;
+            const double cPt  = 0.5;
+            const double cxB  = 0.8;
+            const double cQ2  = 0.08;   // 1/GeV^2
+
+            double kin_dep = (1.0 + cz  * (kaonp_z_recoMC - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0)) * (1.0 + cxB * (kaonp_xB_recoMC  - xB0)) * (1.0 + cQ2 * (kaonp_Q2_recoMC  - Q20));
+
+            double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
+            double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
 
             // ========================================================================================
 
@@ -1440,7 +1457,7 @@ void rgc_toy_systematics(const char* period) {
                             vec_helicity_2d[index_xQ2-1].push_back(helicity);
                             vec_kaonp_2phih_2d[index_xQ2-1].push_back(2*kaonp_Phi_h);
                             vec_kaonp_z_2d[index_xQ2-1].push_back(kaonp_z);
-                            vec_kaonp_Pt_2d[index_xQ2-1].push_back(kaonp_Pt);
+                            vec_kaonp_Pt_2d[index_xQ2-1].push_back(kaonp_PhT);
                             vec_kaonp_xB_2d[index_xQ2-1].push_back(kaonp_xB);
                             vec_kaonp_Q2_2d[index_xQ2-1].push_back(kaonp_Q2);
                             vec_kaonp_y_2d[index_xQ2-1].push_back(kaonp_y);
@@ -1457,7 +1474,7 @@ void rgc_toy_systematics(const char* period) {
                             vec_helicity_2d_zPt[index_zPt-1].push_back(helicity);
                             vec_kaonp_2phih_2d_zPt[index_zPt-1].push_back(2*kaonp_Phi_h);
                             vec_kaonp_z_2d_zPt[index_zPt-1].push_back(kaonp_z);
-                            vec_kaonp_Pt_2d_zPt[index_zPt-1].push_back(kaonp_Pt);
+                            vec_kaonp_Pt_2d_zPt[index_zPt-1].push_back(kaonp_PhT);
                             vec_kaonp_xB_2d_zPt[index_zPt-1].push_back(kaonp_xB);
                             vec_kaonp_Q2_2d_zPt[index_zPt-1].push_back(kaonp_Q2);
                             vec_kaonp_y_2d_zPt[index_zPt-1].push_back(kaonp_y);
@@ -1636,7 +1653,7 @@ void rgc_toy_systematics(const char* period) {
         double Auu_cos2_fixed = 0.0;
 
         // ASYMMETRIES xQ2
-        /*
+        
         for (int x = 0; x < nbin_xQ2; x++){ 
             ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
             ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_mc[x], vec_kaonp_spin_2d_mc[x], vec_kaonp_y_2d_mc[x],vec_kaonp_eps_2d_mc[x], vec_kaonp_pol_2d_mc[x], vec_helicity_2d_mc[x], vec_kaonp_bootw_2d_mc[x], true, period);}, 7);
@@ -1820,38 +1837,15 @@ void rgc_toy_systematics(const char* period) {
         }
         
         cout << " -------------------------------------------------------------------------------------------------------------------------------------------- " << endl;
-        */
+        
         
 
         // Asymmetries zPt
         for (int z = 0; z < nbin_zPt; z++){ 
 
-            double r_local_mc, r_local_preID, r_local_true, r_local_all_ID, r_local_reco;
-            /*
-            double N_pos_mc = std::count(vec_helicity_2d_zPt_mc[z].begin(), vec_helicity_2d_zPt_mc[z].end(), +1);
-            double N_neg_mc = std::count(vec_helicity_2d_zPt_mc[z].begin(), vec_helicity_2d_zPt_mc[z].end(), -1);
-            double r_local_mc = N_neg_mc / N_pos_mc;
-
-            double N_pos_preID = std::count(vec_helicity_2d_zPt_preID[z].begin(), vec_helicity_2d_zPt_preID[z].end(), +1);
-            double N_neg_preID = std::count(vec_helicity_2d_zPt_preID[z].begin(), vec_helicity_2d_zPt_preID[z].end(), -1);
-            double r_local_preID = N_neg_preID / N_pos_preID;
-
-            double N_pos_true = std::count(vec_helicity_2d_zPt_true[z].begin(), vec_helicity_2d_zPt_true[z].end(), +1);
-            double N_neg_true = std::count(vec_helicity_2d_zPt_true[z].begin(), vec_helicity_2d_zPt_true[z].end(), -1);
-            double r_local_true = N_neg_true / N_pos_true;
-
-            double N_pos_all_ID = std::count(vec_helicity_2d_zPt_all_ID[z].begin(), vec_helicity_2d_zPt_all_ID[z].end(), +1);
-            double N_neg_all_ID = std::count(vec_helicity_2d_zPt_all_ID[z].begin(), vec_helicity_2d_zPt_all_ID[z].end(), -1);
-            double r_local_all_ID = N_neg_all_ID / N_pos_all_ID;
-
-            double N_pos_reco = std::count(vec_helicity_2d_zPt[z].begin(), vec_helicity_2d_zPt[z].end(), +1);
-            double N_neg_reco = std::count(vec_helicity_2d_zPt[z].begin(), vec_helicity_2d_zPt[z].end(), -1);
-            double r_local_reco = N_neg_reco / N_pos_reco;
-            */
-
 
             ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_preID[z], vec_kaonp_spin_2d_zPt_preID[z], vec_kaonp_y_2d_zPt_preID[z],vec_kaonp_eps_2d_zPt_preID[z], vec_kaonp_pol_2d_zPt_preID[z], vec_helicity_2d_zPt_preID[z], vec_kaonp_bootw_2d_zPt_preID[z], r_local_preID, true, period);}, 7);
+            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_preID[z], vec_kaonp_spin_2d_zPt_preID[z], vec_kaonp_y_2d_zPt_preID[z],vec_kaonp_eps_2d_zPt_preID[z], vec_kaonp_pol_2d_zPt_preID[z], vec_helicity_2d_zPt_preID[z], vec_kaonp_bootw_2d_zPt_preID[z], true, period);}, 7);
             minimizer.SetFunction(MLE); 
             minimizer.SetMaxFunctionCalls(50000);
             minimizer.SetMaxIterations(10000);
@@ -1882,7 +1876,7 @@ void rgc_toy_systematics(const char* period) {
 
             // true
             ROOT::Minuit2::Minuit2Minimizer minimizer2(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE2([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_true[z], vec_kaonp_spin_2d_zPt_true[z], vec_kaonp_y_2d_zPt_true[z],vec_kaonp_eps_2d_zPt_true[z], vec_kaonp_pol_2d_zPt_true[z], vec_helicity_2d_zPt_true[z], vec_kaonp_bootw_2d_zPt_true[z], r_local_true, true, period);}, 7);
+            ROOT::Math::Functor MLE2([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_true[z], vec_kaonp_spin_2d_zPt_true[z], vec_kaonp_y_2d_zPt_true[z],vec_kaonp_eps_2d_zPt_true[z], vec_kaonp_pol_2d_zPt_true[z], vec_helicity_2d_zPt_true[z], vec_kaonp_bootw_2d_zPt_true[z], true, period);}, 7);
             minimizer2.SetFunction(MLE2);
             minimizer2.SetMaxFunctionCalls(50000);
             minimizer2.SetMaxIterations(10000);
@@ -1912,7 +1906,7 @@ void rgc_toy_systematics(const char* period) {
 
             // allID
             ROOT::Minuit2::Minuit2Minimizer minimizer3(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE3([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_all_ID[z], vec_kaonp_spin_2d_zPt_all_ID[z], vec_kaonp_y_2d_zPt_all_ID[z],vec_kaonp_eps_2d_zPt_all_ID[z], vec_kaonp_pol_2d_zPt_all_ID[z], vec_helicity_2d_zPt_all_ID[z], vec_kaonp_bootw_2d_zPt_all_ID[z], r_local_all_ID, true, period);}, 7);
+            ROOT::Math::Functor MLE3([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_all_ID[z], vec_kaonp_spin_2d_zPt_all_ID[z], vec_kaonp_y_2d_zPt_all_ID[z],vec_kaonp_eps_2d_zPt_all_ID[z], vec_kaonp_pol_2d_zPt_all_ID[z], vec_helicity_2d_zPt_all_ID[z], vec_kaonp_bootw_2d_zPt_all_ID[z], true, period);}, 7);
             minimizer3.SetFunction(MLE3);
             minimizer3.SetMaxFunctionCalls(50000);
             minimizer3.SetMaxIterations(10000);
@@ -1973,7 +1967,7 @@ void rgc_toy_systematics(const char* period) {
             */
             // reco
             ROOT::Minuit2::Minuit2Minimizer minimizer5(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE5([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_bootw_2d_zPt[z], r_local_reco, true, period);}, 7);
+            ROOT::Math::Functor MLE5([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_bootw_2d_zPt[z], true, period);}, 7);
             minimizer5.SetFunction(MLE5);
             minimizer5.SetMaxFunctionCalls(50000);
             minimizer5.SetMaxIterations(10000);
@@ -2002,7 +1996,7 @@ void rgc_toy_systematics(const char* period) {
             ALU_sin_err_2d_zPt_reco[z] = minimizer5.Errors()[6];
 
             ROOT::Minuit2::Minuit2Minimizer minimizer6(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE6([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_mc[z], vec_kaonp_spin_2d_zPt_mc[z], vec_kaonp_y_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], vec_kaonp_pol_2d_zPt_mc[z], vec_helicity_2d_zPt_mc[z], vec_kaonp_bootw_2d_zPt_mc[z], r_local_mc, true, period);}, 7);
+            ROOT::Math::Functor MLE6([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_mc[z], vec_kaonp_spin_2d_zPt_mc[z], vec_kaonp_y_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], vec_kaonp_pol_2d_zPt_mc[z], vec_helicity_2d_zPt_mc[z], vec_kaonp_bootw_2d_zPt_mc[z], true, period);}, 7);
             minimizer6.SetFunction(MLE6);
             minimizer6.SetMaxFunctionCalls(50000);
             minimizer6.SetMaxIterations(10000);
@@ -2134,9 +2128,55 @@ void rgc_toy_systematics(const char* period) {
                         <<  (ALU_sin_2d_zPt_true[iz] - ALU_sin_2d_zPt_reco[iz])<< "," << safeSigmaDiff(ALU_sin_err_2d_zPt_true[iz], ALU_sin_err_2d_zPt_reco[iz]) << "\n";
         }
 
-        csvFile_zPt_test.close();
+        for (int ix = 0; ix < nbin_xQ2; ix++) {
+            double sum_z = 0.0, sum_xB = 0.0, sum_Q2 = 0.0, sum_Pt = 0.0, sum_eps = 0.0;
+            for(double val_z : vec_kaonp_z_2d[ix]) sum_z += val_z;
+            double mean_z = sum_z / vec_kaonp_z_2d[ix].size();
+            for(double val_xB : vec_kaonp_xB_2d[ix]) sum_xB += val_xB;
+            double mean_xB = sum_xB / vec_kaonp_xB_2d[ix].size();
+            for(double val_Q2 : vec_kaonp_Q2_2d[ix]) sum_Q2 += val_Q2;
+            double mean_Q2 = sum_Q2 / vec_kaonp_Q2_2d[ix].size();
+            for(double val_Pt : vec_kaonp_Pt_2d[ix]) sum_Pt += val_Pt;
+            double mean_Pt = sum_Pt / vec_kaonp_Pt_2d[ix].size();
+            for(double valeps : vec_kaonp_eps_2d[ix]) sum_eps += valeps;
+            double mean_eps = sum_eps / vec_kaonp_eps_2d[ix].size();
 
-        cout << "csv: " << csv_filename_zPt_test << endl;
+            csvFile_xQ2_test << vec_kaonp_y_2d[ix].size() << "," << "NaN" << "," << ix+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << ","
+                        << "AUL_sinPhi" << ","
+                        <<  (AUL_sin_2d_mc[ix] - AUL_sin_2d_preID[ix]) << "," << safeSigmaDiff(AUL_sin_err_2d_mc[ix], AUL_sin_err_2d_preID[ix]) << ","
+                        << (AUL_sin_2d_preID[ix] - AUL_sin_2d_true[ix]) << "," << safeSigmaDiff(AUL_sin_err_2d_preID[ix], AUL_sin_err_2d_true[ix]) << ","
+                        <<  (AUL_sin_2d_all_ID[ix] - AUL_sin_2d_true[ix])<< "," << safeSigmaDiff(AUL_sin_err_2d_all_ID[ix], AUL_sin_err_2d_true[ix]) << ","
+                        <<  (AUL_sin_2d_true[ix] - AUL_sin_2d_reco[ix])<< "," << safeSigmaDiff(AUL_sin_err_2d_true[ix], AUL_sin_err_2d_reco[ix]) << "\n";
+            csvFile_xQ2_test << vec_kaonp_y_2d[ix].size() << "," << "NaN" << "," << ix+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << ","
+                        << "AUL_sin2Phi" << ","
+                        <<  (AUL_2sin_2d_mc[ix] - AUL_2sin_2d_preID[ix])<< "," << safeSigmaDiff(AUL_2sin_err_2d_mc[ix], AUL_2sin_err_2d_preID[ix]) << ","
+                        << (AUL_2sin_2d_preID[ix] - AUL_2sin_2d_true[ix]) << "," << safeSigmaDiff(AUL_2sin_err_2d_preID[ix], AUL_2sin_err_2d_true[ix]) << ","
+                        <<  (AUL_2sin_2d_all_ID[ix] - AUL_2sin_2d_true[ix])<< "," << safeSigmaDiff(AUL_2sin_err_2d_all_ID[ix], AUL_2sin_err_2d_true[ix]) << ","
+                        <<  (AUL_2sin_2d_true[ix] - AUL_2sin_2d_reco[ix])<< "," << safeSigmaDiff(AUL_2sin_err_2d_true[ix], AUL_2sin_err_2d_reco[ix]) << "\n";
+            csvFile_xQ2_test << vec_kaonp_y_2d[ix].size() << "," << "NaN" << "," << ix+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << ","
+                        << "ALL_const" << ","
+                        <<  (ALL_0_2d_mc[ix] - ALL_0_2d_preID[ix])<< "," << safeSigmaDiff(ALL_0_err_2d_mc[ix], ALL_0_err_2d_preID[ix]) << ","
+                        << (ALL_0_2d_preID[ix] - ALL_0_2d_true[ix]) << "," << safeSigmaDiff(ALL_0_err_2d_preID[ix], ALL_0_err_2d_true[ix]) << ","
+                        <<  (ALL_0_2d_all_ID[ix] - ALL_0_2d_true[ix])<< "," << safeSigmaDiff(ALL_0_err_2d_all_ID[ix], ALL_0_err_2d_true[ix]) << ","
+                        <<  (ALL_0_2d_true[ix] - ALL_0_2d_reco[ix])<< "," << safeSigmaDiff(ALL_0_err_2d_true[ix], ALL_0_err_2d_reco[ix]) << "\n";
+            csvFile_xQ2_test << vec_kaonp_y_2d[ix].size() << "," << "NaN" << "," << ix+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << ","
+                        << "ALL_cosPhi" << ","
+                        <<  (ALL_cos_2d_mc[ix] - ALL_cos_2d_preID[ix])<< "," << safeSigmaDiff(ALL_cos_err_2d_mc[ix], ALL_cos_err_2d_preID[ix]) << ","
+                        << (ALL_cos_2d_preID[ix] - ALL_cos_2d_true[ix]) << "," << safeSigmaDiff(ALL_cos_err_2d_preID[ix], ALL_cos_err_2d_true[ix]) << ","
+                        <<  (ALL_cos_2d_all_ID[ix] - ALL_cos_2d_true[ix])<< "," << safeSigmaDiff(ALL_cos_err_2d_all_ID[ix], ALL_cos_err_2d_true[ix]) << ","
+                        <<  (ALL_cos_2d_true[ix] - ALL_cos_2d_reco[ix])<< "," << safeSigmaDiff(ALL_cos_err_2d_true[ix], ALL_cos_err_2d_reco[ix]) << "\n";
+            csvFile_xQ2_test << vec_kaonp_y_2d[ix].size() << "," << "NaN" << "," << ix+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << ","
+                        << "ALU_sinPhi" << ","
+                        <<  (ALU_sin_2d_mc[ix] - ALU_sin_2d_preID[ix])<< "," << safeSigmaDiff(ALU_sin_err_2d_mc[ix], ALU_sin_err_2d_preID[ix]) << ","
+                        << (ALU_sin_2d_preID[ix] - ALU_sin_2d_true[ix]) << "," << safeSigmaDiff(ALU_sin_err_2d_preID[ix], ALU_sin_err_2d_true[ix]) << ","
+                        <<  (ALU_sin_2d_all_ID[ix] - ALU_sin_2d_true[ix])<< "," << safeSigmaDiff(ALU_sin_err_2d_all_ID[ix], ALU_sin_err_2d_true[ix]) << ","
+                        <<  (ALU_sin_2d_true[ix] - ALU_sin_2d_reco[ix])<< "," << safeSigmaDiff(ALU_sin_err_2d_true[ix], ALU_sin_err_2d_reco[ix]) << "\n";
+        }
+
+        csvFile_zPt_test.close();
+        csvFile_xQ2_test.close();
+
+        cout << "csv: " << csv_filename_zPt_test  << " & " << csv_filename_xQ2_test << endl;
     }
 
     //outFile.Write();

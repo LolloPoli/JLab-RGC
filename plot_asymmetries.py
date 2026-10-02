@@ -20,23 +20,19 @@ os.makedirs(outdir, exist_ok=True)
 # Carica CSV
 # ============================================================
 
-sum22 = pd.read_csv(
-    "output_RGC_NH3_asymmetries_sum22.csv",
-    skipinitialspace=True
-)
-
-fall22 = pd.read_csv(
-    "output_RGC_NH3_asymmetries_fall22.csv",
-    skipinitialspace=True
-)
+sum22 = pd.read_csv("RECO_CSV/output_RGC_NH3_asymmetries_sum22.csv",skipinitialspace=True)
+fall22 = pd.read_csv("RECO_CSV/output_RGC_NH3_asymmetries_fall22.csv",skipinitialspace=True)
 
 # Spring23 viene caricato solo se richiesto
 if include_spring23:
-    spring23 = pd.read_csv(
-        "output_RGC_NH3_asymmetries_spring23.csv",
-        skipinitialspace=True
-    )
+    spring23 = pd.read_csv("RECO_CSV/output_RGC_NH3_asymmetries_spring23.csv",skipinitialspace=True)
 
+
+sum22_xB = pd.read_csv("RECO_CSV/output_RGC_NH3_asymmetries_sum22_xQ2.csv",skipinitialspace=True)
+fall22_xB = pd.read_csv("RECO_CSV/output_RGC_NH3_asymmetries_fall22_xQ2.csv",skipinitialspace=True)
+
+if include_spring23:
+    spring23_xB = pd.read_csv("RECO_CSV/output_RGC_NH3_asymmetries_spring23_xQ2.csv",skipinitialspace=True)
 
 # ============================================================
 # Gruppi di PhT
@@ -294,6 +290,157 @@ for asym, err in asymmetries:
     )
 
     plt.close()
+    
 
 
-print("All asymmetry plots created!")
+# ============================================================
+# Plot xB-Q2
+# ============================================================
+
+for asym, err in asymmetries:
+
+    fig, ax = plt.subplots(
+        figsize=(7, 5)
+    )
+
+    # --------------------------------------------------------
+    # Spring23 - prima, così rimane sotto
+    # --------------------------------------------------------
+
+    if include_spring23:
+
+        spring23_sel = spring23_xB.sort_values("mean_xB")
+
+        ax.errorbar(
+            spring23_sel["mean_xB"],
+            spring23_sel[asym],
+            yerr=spring23_sel[err],
+            fmt="^",
+            markersize=6,
+            capsize=3,
+            linewidth=1.2,
+            label="Spring23",
+            color="tab:green",
+            markerfacecolor="white",
+            zorder=1
+        )
+
+
+    # --------------------------------------------------------
+    # Summer22
+    # --------------------------------------------------------
+
+    sum22_sel = sum22_xB.sort_values("mean_xB")
+
+    ax.errorbar(
+        sum22_sel["mean_xB"],
+        sum22_sel[asym],
+        yerr=sum22_sel[err],
+        fmt="o",
+        markersize=6,
+        capsize=3,
+        linewidth=1.2,
+        label="Summer22",
+        color="tab:blue",
+        markerfacecolor="white",
+        zorder=2
+    )
+
+
+    # --------------------------------------------------------
+    # Fall22
+    # --------------------------------------------------------
+
+    fall22_sel = fall22_xB.sort_values("mean_xB")
+
+    ax.errorbar(
+        fall22_sel["mean_xB"],
+        fall22_sel[asym],
+        yerr=fall22_sel[err],
+        fmt="s",
+        markersize=6,
+        capsize=3,
+        linewidth=1.2,
+        label="Fall22",
+        color="tab:orange",
+        markerfacecolor="white",
+        zorder=3
+    )
+
+
+    # zero line
+    ax.axhline(
+        0,
+        color="black",
+        linestyle="--",
+        linewidth=1,
+        alpha=0.6
+    )
+
+
+    # stessi limiti dei plot precedenti
+    if asym == "ALU_sinPhi":
+        ax.set_ylim(-0.2, 0.2)
+
+    elif asym == "ALL":
+        ax.set_ylim(-0.1, 0.8)
+
+    elif asym == "ALL_cosPhi":
+        ax.set_ylim(-0.6, 0.6)
+
+    elif asym == "AUL_sin2Phi":
+        ax.set_ylim(-0.4, 0.5)
+
+    else:
+        ax.set_ylim(-0.3, 0.3)
+
+
+    # assi
+    ax.set_xlabel(r"$x_B$", fontsize=13)
+    ax.set_ylabel(asym_labels[asym], fontsize=13)
+
+    ax.set_title(
+        r"$K^+$ NH$_3$ Run Group C",
+        fontsize=14
+    )
+
+
+    # stile
+    ax.tick_params(
+        direction="in",
+        top=True,
+        right=True,
+        length=5
+    )
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.2)
+
+    ax.grid(
+        alpha=0.25,
+        linestyle=":"
+    )
+
+    ax.legend()
+
+
+    plt.tight_layout()
+
+
+    # output
+    if include_spring23:
+        output_name = f"{asym}_xB_Q2_campaign_comparison_all.png"
+    else:
+        output_name = f"{asym}_xB_Q2_campaign_comparison_sum_fall.png"
+
+
+    plt.savefig(
+        f"{outdir}/{output_name}",
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.close()
+
+
+print("All asymmetry plots created in:", outdir)
