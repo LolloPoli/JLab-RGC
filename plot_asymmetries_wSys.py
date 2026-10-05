@@ -59,7 +59,7 @@ elif binning == "xQ2":
     x_label = r"$x_B$"
 
     # larghezza box sistematica
-    SYS_BOX_WIDTH = 0.008
+    SYS_BOX_WIDTH = 0.015
 
 
 else:
@@ -330,7 +330,7 @@ def plot_campaign_with_sys(
                     sel[x_column],
                     height=2 * sel[totsys_col],
                     bottom=sel[asym] - sel[totsys_col],
-                    width=2 * SYS_BOX_WIDTH,
+                    width= SYS_BOX_WIDTH,
                     color="r",
                     alpha=0.4,
                     edgecolor="none",
@@ -461,7 +461,7 @@ def plot_campaign_with_sys(
                 sel[x_column],
                 height=2 * sel[totsys_col],
                 bottom=sel[asym] - sel[totsys_col],
-                width=2 * SYS_BOX_WIDTH,
+                width= SYS_BOX_WIDTH,
                 color="r",
                 alpha=0.4,
                 edgecolor="none",

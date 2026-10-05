@@ -620,10 +620,10 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 1;
-    for (int s = 0; s < toy_step; s++){
-        TString csv_filename_zPt_test = Form("toy_model/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
-        TString csv_filename_xQ2_test = Form("toy_model/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
+    int toy_step = 500;
+    for (int s = 401; s < toy_step; s++){
+        TString csv_filename_zPt_test = Form("toy_model3/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
+        TString csv_filename_xQ2_test = Form("toy_model3/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
         //std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
         //std::ofstream csvFile_zPt(csv_filename_zPt.Data());
@@ -1146,10 +1146,11 @@ void rgc_toy_systematics(const char* period) {
         double dilution = 0.25;
         double beam_pol = 0.84;
         double PbPt = 0.71;
+        double kin_dep_max = 1.68;
 
-        double f_max_inject = 1.0 + dilution*0.85*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
-                                + dilution*0.85*beam_pol*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
-                                + beam_pol*(std::abs(A_LU_sin_inject));
+        double f_max_inject = 1.0 + dilution*0.85*kin_dep_max*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
+                                + dilution*0.85*beam_pol*kin_dep_max*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
+                                + beam_pol*kin_dep_max*(std::abs(A_LU_sin_inject));
 
         TRandom3 rng(12345 + s);
         // MC
@@ -1174,23 +1175,26 @@ void rgc_toy_systematics(const char* period) {
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
             // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
 
-            const double z0   = 0.4;
-            const double Pt0  = 0.5;
-            const double xB0  = 0.3;
-            const double Q20  = 4.0;
+            const double z0   = 0.44;  // old 0.4
+            const double Pt0  = 0.39;  // old 0.5
+            const double xB0  = 0.26; // old 0.3
+            const double Q20  = 2.77;  // old 4.0
 
-            const double cz   = 0.8;
-            const double cPt  = 0.5;
-            const double cxB  = 0.8;
-            const double cQ2  = 0.08;   // 1/GeV^2
+            const double cz   = 0.45;
+            const double cPt  = 0.35;
+            const double cxB  = 0.25;
+            const double cQ2  = 0.025;   // 1/GeV^2
 
             double kin_dep = (1.0 + cz  * (kaonp_z_mc - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0)) * (1.0 + cxB * (kaonp_xB_mc  - xB0)) * (1.0 + cQ2 * (kaonp_Q2_mc  - Q20));
+            //double kin_dep_LL = 1.0 + 0.5 * (kin_dep - 1.0);
 
             double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
             double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
             double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
             double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
             double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+
+            //if (index_zPt == 1) std::cout << "kin_dep = " << kin_dep  << "   ALL injected = " << A_LL_0_inject_dep << std::endl; 
 
             // ========================================================================================
 
@@ -1272,15 +1276,15 @@ void rgc_toy_systematics(const char* period) {
 
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
 
-            const double z0   = 0.4;
-            const double Pt0  = 0.5;
-            const double xB0  = 0.3;
-            const double Q20  = 4.0;
+            const double z0   = 0.44;  // old 0.4
+            const double Pt0  = 0.39;  // old 0.5
+            const double xB0  = 0.26; // old 0.3
+            const double Q20  = 2.77;  // old 4.0
 
-            const double cz   = 0.8;
-            const double cPt  = 0.5;
-            const double cxB  = 0.8;
-            const double cQ2  = 0.08;   // 1/GeV^2
+            const double cz   = 0.45;
+            const double cPt  = 0.35;
+            const double cxB  = 0.25;
+            const double cQ2  = 0.025;   // 1/GeV^2
 
             double kin_dep = (1.0 + cz  * (kaonp_z_recoMC - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0)) * (1.0 + cxB * (kaonp_xB_recoMC  - xB0)) * (1.0 + cQ2 * (kaonp_Q2_recoMC  - Q20));
 
