@@ -138,6 +138,8 @@ double AUL_loglike_withLL(const double* Aul,
                           const vector<double>& Ptarget,     // target polarization
                           const vector<double>& helicity,    // beam helicity (+1 / -1)
                           const vector<double>& bootw, 
+                          const vector<double>& mc_phi_h,
+                          const vector<double>& mc_depol,
                           bool use_spinstate_for_helicity = true,
                           const char* campaign = "fall22")
 {
@@ -199,7 +201,33 @@ double AUL_loglike_withLL(const double* Aul,
         logLike += bootw[i] * log(arg);
     }
 
-    return -logLike;
+    //return -logLike;
+    // Timothy Hayward, Eq. (21): UU normalization
+    double N_UU = 0.0;
+
+    for (size_t j = 0; j < mc_phi_h.size(); ++j) {
+
+        const double eps = mc_depol[j];
+        const double phi = mc_phi_h[j];
+
+        const double V_over_A =
+            sqrt(2.0 * eps * (1.0 + eps));
+
+        const double B_over_A = eps;
+
+        const double UU =
+            V_over_A * A_UU_cos1 * cos(phi)
+        + B_over_A * A_UU_cos2 * cos(2.0 * phi);
+
+        N_UU += 1.0 + UU;
+    }
+
+    if (N_UU <= 0.0 || !std::isfinite(N_UU))
+        return 1e12;
+
+    const double N = static_cast<double>(phi_h.size());
+
+    return -logLike + N * log(N_UU);
 }
 
 
@@ -620,10 +648,10 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 500;
-    for (int s = 401; s < toy_step; s++){
-        TString csv_filename_zPt_test = Form("toy_model3/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
-        TString csv_filename_xQ2_test = Form("toy_model3/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
+    int toy_step = 200;
+    for (int s = 0; s < toy_step; s++){
+        TString csv_filename_zPt_test = Form("toy_model/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
+        TString csv_filename_xQ2_test = Form("toy_model/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
         //std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
         //std::ofstream csvFile_zPt(csv_filename_zPt.Data());
@@ -1159,6 +1187,7 @@ void rgc_toy_systematics(const char* period) {
         vector<double> fake_Ptarget_vec(MC_chainKaonP.GetEntries());   // salvato per riuso nel fit
         for (Long64_t i = 0; i < nEntries_mc; i++) {
             MC_chainKaonP.GetEntry(i);
+            if(kaonp_Ph_mc >= 3 && kaonp_Theta_mc >= 0.4) continue;
             if(std::fabs(kaonp_Phi_mc) < 2.5 && std::fabs(kaonp_Phi_mc) > 0.65 && kaonp_Ph_mc >= 3) continue; 
             double index_xQ2 = getBinIndex_xQ2(kaonp_xB_mc, kaonp_Q2_mc); 
             double index_zPt = getBinIndex_zPt(kaonp_z_mc, kaonp_PhT_mc);
@@ -1173,7 +1202,6 @@ void rgc_toy_systematics(const char* period) {
             double bootw = rng.PoissonD(1.0);
 
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
-            // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
 
             const double z0   = 0.44;  // old 0.4
             const double Pt0  = 0.39;  // old 0.5
@@ -1263,7 +1291,9 @@ void rgc_toy_systematics(const char* period) {
             // RICH cut
             //if (electron_ass != 321) continue;
             chainKaonP.GetEntry(i);
-            if(std::fabs(kaonp_Phi) < 2.5 && std::fabs(kaonp_Phi) > 0.65 && kaonp_Ph >= 3) continue;
+            //if(std::fabs(kaonp_Phi) < 2.5 && std::fabs(kaonp_Phi) > 0.65 && kaonp_Ph >= 3) continue;
+            if(kaonp_Ph >= 3 && kaonp_Theta_recoMC >= 0.4) continue;
+            if(std::fabs(kaonp_Phi_recoMC) < 2.5 && std::fabs(kaonp_Phi_recoMC) > 0.65 && kaonp_Ph >= 3) continue;
 
             // ======================================================================================================================
             // spin injection 
@@ -1660,7 +1690,7 @@ void rgc_toy_systematics(const char* period) {
         
         for (int x = 0; x < nbin_xQ2; x++){ 
             ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_mc[x], vec_kaonp_spin_2d_mc[x], vec_kaonp_y_2d_mc[x],vec_kaonp_eps_2d_mc[x], vec_kaonp_pol_2d_mc[x], vec_helicity_2d_mc[x], vec_kaonp_bootw_2d_mc[x], true, period);}, 7);
+            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_mc[x], vec_kaonp_spin_2d_mc[x], vec_kaonp_y_2d_mc[x],vec_kaonp_eps_2d_mc[x], vec_kaonp_pol_2d_mc[x], vec_helicity_2d_mc[x], vec_kaonp_bootw_2d_mc[x], vec_kaonp_phih_2d_mc[x], vec_kaonp_eps_2d_mc[x], true, period);}, 7);
             minimizer.SetFunction(MLE);
             minimizer.SetMaxFunctionCalls(50000);
             minimizer.SetMaxIterations(10000);
@@ -1691,7 +1721,7 @@ void rgc_toy_systematics(const char* period) {
             
             // true
             ROOT::Minuit2::Minuit2Minimizer minimizer2(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE2([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_true[x], vec_kaonp_spin_2d_true[x], vec_kaonp_y_2d_true[x],vec_kaonp_eps_2d_true[x], vec_kaonp_pol_2d_true[x], vec_helicity_2d_true[x], vec_kaonp_bootw_2d_true[x], true, period);}, 7);
+            ROOT::Math::Functor MLE2([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_true[x], vec_kaonp_spin_2d_true[x], vec_kaonp_y_2d_true[x],vec_kaonp_eps_2d_true[x], vec_kaonp_pol_2d_true[x], vec_helicity_2d_true[x], vec_kaonp_bootw_2d_true[x], vec_kaonp_phih_2d_mc[x], vec_kaonp_eps_2d_mc[x], true, period);}, 7);
             minimizer2.SetFunction(MLE2);
             minimizer2.SetMaxFunctionCalls(50000);
             minimizer2.SetMaxIterations(10000);
@@ -1721,7 +1751,7 @@ void rgc_toy_systematics(const char* period) {
 
             // allID
             ROOT::Minuit2::Minuit2Minimizer minimizer3(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE3([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_all_ID[x], vec_kaonp_spin_2d_all_ID[x], vec_kaonp_y_2d_all_ID[x],vec_kaonp_eps_2d_all_ID[x], vec_kaonp_pol_2d_all_ID[x], vec_helicity_2d_all_ID[x], vec_kaonp_bootw_2d_all_ID[x], true, period);}, 7);
+            ROOT::Math::Functor MLE3([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_all_ID[x], vec_kaonp_spin_2d_all_ID[x], vec_kaonp_y_2d_all_ID[x],vec_kaonp_eps_2d_all_ID[x], vec_kaonp_pol_2d_all_ID[x], vec_helicity_2d_all_ID[x], vec_kaonp_bootw_2d_all_ID[x], vec_kaonp_phih_2d_mc[x], vec_kaonp_eps_2d_mc[x], true, period);}, 7);
             minimizer3.SetFunction(MLE3);
             minimizer3.SetMaxFunctionCalls(50000);
             minimizer3.SetMaxIterations(10000);
@@ -1751,7 +1781,7 @@ void rgc_toy_systematics(const char* period) {
 
             // preID
             ROOT::Minuit2::Minuit2Minimizer minimizer4(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE4([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_preID[x], vec_kaonp_spin_2d_preID[x], vec_kaonp_y_2d_preID[x],vec_kaonp_eps_2d_preID[x], vec_kaonp_pol_2d_preID[x], vec_helicity_2d_preID[x], vec_kaonp_bootw_2d_preID[x], true, period);}, 7);
+            ROOT::Math::Functor MLE4([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_preID[x], vec_kaonp_spin_2d_preID[x], vec_kaonp_y_2d_preID[x],vec_kaonp_eps_2d_preID[x], vec_kaonp_pol_2d_preID[x], vec_helicity_2d_preID[x], vec_kaonp_bootw_2d_preID[x], vec_kaonp_phih_2d_mc[x], vec_kaonp_eps_2d_mc[x], true, period);}, 7);
             minimizer4.SetFunction(MLE4);
             minimizer4.SetMaxFunctionCalls(50000);
             minimizer4.SetMaxIterations(10000);
@@ -1781,7 +1811,7 @@ void rgc_toy_systematics(const char* period) {
 
             // reco
             ROOT::Minuit2::Minuit2Minimizer minimizer5(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE5([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_y_2d[x],vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_bootw_2d[x], true, period);}, 7);
+            ROOT::Math::Functor MLE5([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_y_2d[x],vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_bootw_2d[x], vec_kaonp_phih_2d_mc[x], vec_kaonp_eps_2d_mc[x], true, period);}, 7);
             minimizer5.SetFunction(MLE5);
             minimizer5.SetMaxFunctionCalls(50000);
             minimizer5.SetMaxIterations(10000);
@@ -1809,34 +1839,6 @@ void rgc_toy_systematics(const char* period) {
             ALU_sin_2d_reco[x] = minimizer5.X()[6];
             ALU_sin_err_2d_reco[x] = minimizer5.Errors()[6];
 
-            // mc
-            
-            ROOT::Minuit2::Minuit2Minimizer minimizer6(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE6([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_mc[x], vec_kaonp_spin_2d_mc[x], vec_kaonp_y_2d_mc[x],vec_kaonp_eps_2d_mc[x], vec_kaonp_pol_2d_mc[x], vec_helicity_2d_mc[x], vec_kaonp_bootw_2d_mc[x], true, period);}, 7);
-            minimizer6.SetFunction(MLE6);
-            minimizer6.SetMaxFunctionCalls(50000);
-            minimizer6.SetMaxIterations(10000);
-            minimizer6.SetTolerance(0.001);
-            minimizer6.SetStrategy(1);
-            minimizer6.SetLimitedVariable(0, "Aul_sin", 0.00, 0.001, -0.8, 0.8); 
-            minimizer6.SetLimitedVariable(1, "Aul_2sin", 0.00, 0.001, -0.8, 0.8);
-            minimizer6.SetLimitedVariable(2, "All", 0.00, 0.001, -0.8, 0.8); 
-            minimizer6.SetLimitedVariable(3, "All_cos", 0.00, 0.001, -0.8, 0.8);
-            minimizer6.SetFixedVariable(4, "Auu", Auu_cos_fixed);
-            minimizer6.SetFixedVariable(5, "Auu2", Auu_cos2_fixed);
-            minimizer6.SetLimitedVariable(6, "Alu", 0.00, 0.001, -0.8, 0.8);
-            minimizer6.Minimize();
-            // LSA
-            AUL_sin_2d_mc[x] = minimizer6.X()[0];
-            AUL_sin_err_2d_mc[x] = minimizer6.Errors()[0];
-            AUL_2sin_2d_mc[x] = minimizer6.X()[1];
-            AUL_2sin_err_2d_mc[x] = minimizer6.Errors()[1];
-            ALL_0_2d_mc[x] = minimizer6.X()[2];
-            ALL_0_err_2d_mc[x] = minimizer6.Errors()[2];
-            ALL_cos_2d_mc[x] = minimizer6.X()[3];
-            ALL_cos_err_2d_mc[x] = minimizer6.Errors()[3];
-            ALU_sin_2d_mc[x] = minimizer6.X()[6];
-            ALU_sin_err_2d_mc[x] = minimizer6.Errors()[6];
             
         }
         
@@ -1849,7 +1851,7 @@ void rgc_toy_systematics(const char* period) {
 
 
             ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_preID[z], vec_kaonp_spin_2d_zPt_preID[z], vec_kaonp_y_2d_zPt_preID[z],vec_kaonp_eps_2d_zPt_preID[z], vec_kaonp_pol_2d_zPt_preID[z], vec_helicity_2d_zPt_preID[z], vec_kaonp_bootw_2d_zPt_preID[z], true, period);}, 7);
+            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_preID[z], vec_kaonp_spin_2d_zPt_preID[z], vec_kaonp_y_2d_zPt_preID[z],vec_kaonp_eps_2d_zPt_preID[z], vec_kaonp_pol_2d_zPt_preID[z], vec_helicity_2d_zPt_preID[z], vec_kaonp_bootw_2d_zPt_preID[z], vec_kaonp_phih_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], true, period);}, 7);
             minimizer.SetFunction(MLE); 
             minimizer.SetMaxFunctionCalls(50000);
             minimizer.SetMaxIterations(10000);
@@ -1880,7 +1882,7 @@ void rgc_toy_systematics(const char* period) {
 
             // true
             ROOT::Minuit2::Minuit2Minimizer minimizer2(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE2([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_true[z], vec_kaonp_spin_2d_zPt_true[z], vec_kaonp_y_2d_zPt_true[z],vec_kaonp_eps_2d_zPt_true[z], vec_kaonp_pol_2d_zPt_true[z], vec_helicity_2d_zPt_true[z], vec_kaonp_bootw_2d_zPt_true[z], true, period);}, 7);
+            ROOT::Math::Functor MLE2([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_true[z], vec_kaonp_spin_2d_zPt_true[z], vec_kaonp_y_2d_zPt_true[z],vec_kaonp_eps_2d_zPt_true[z], vec_kaonp_pol_2d_zPt_true[z], vec_helicity_2d_zPt_true[z], vec_kaonp_bootw_2d_zPt_true[z], vec_kaonp_phih_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], true, period);}, 7);
             minimizer2.SetFunction(MLE2);
             minimizer2.SetMaxFunctionCalls(50000);
             minimizer2.SetMaxIterations(10000);
@@ -1910,7 +1912,7 @@ void rgc_toy_systematics(const char* period) {
 
             // allID
             ROOT::Minuit2::Minuit2Minimizer minimizer3(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE3([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_all_ID[z], vec_kaonp_spin_2d_zPt_all_ID[z], vec_kaonp_y_2d_zPt_all_ID[z],vec_kaonp_eps_2d_zPt_all_ID[z], vec_kaonp_pol_2d_zPt_all_ID[z], vec_helicity_2d_zPt_all_ID[z], vec_kaonp_bootw_2d_zPt_all_ID[z], true, period);}, 7);
+            ROOT::Math::Functor MLE3([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_all_ID[z], vec_kaonp_spin_2d_zPt_all_ID[z], vec_kaonp_y_2d_zPt_all_ID[z],vec_kaonp_eps_2d_zPt_all_ID[z], vec_kaonp_pol_2d_zPt_all_ID[z], vec_helicity_2d_zPt_all_ID[z], vec_kaonp_bootw_2d_zPt_all_ID[z], vec_kaonp_phih_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], true, period);}, 7);
             minimizer3.SetFunction(MLE3);
             minimizer3.SetMaxFunctionCalls(50000);
             minimizer3.SetMaxIterations(10000);
@@ -1971,7 +1973,7 @@ void rgc_toy_systematics(const char* period) {
             */
             // reco
             ROOT::Minuit2::Minuit2Minimizer minimizer5(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE5([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_bootw_2d_zPt[z], true, period);}, 7);
+            ROOT::Math::Functor MLE5([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_bootw_2d_zPt[z], vec_kaonp_phih_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], true, period);}, 7);
             minimizer5.SetFunction(MLE5);
             minimizer5.SetMaxFunctionCalls(50000);
             minimizer5.SetMaxIterations(10000);
@@ -2000,7 +2002,7 @@ void rgc_toy_systematics(const char* period) {
             ALU_sin_err_2d_zPt_reco[z] = minimizer5.Errors()[6];
 
             ROOT::Minuit2::Minuit2Minimizer minimizer6(ROOT::Minuit2::kMigrad);
-            ROOT::Math::Functor MLE6([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_mc[z], vec_kaonp_spin_2d_zPt_mc[z], vec_kaonp_y_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], vec_kaonp_pol_2d_zPt_mc[z], vec_helicity_2d_zPt_mc[z], vec_kaonp_bootw_2d_zPt_mc[z], true, period);}, 7);
+            ROOT::Math::Functor MLE6([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt_mc[z], vec_kaonp_spin_2d_zPt_mc[z], vec_kaonp_y_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], vec_kaonp_pol_2d_zPt_mc[z], vec_helicity_2d_zPt_mc[z], vec_kaonp_bootw_2d_zPt_mc[z], vec_kaonp_phih_2d_zPt_mc[z],vec_kaonp_eps_2d_zPt_mc[z], true, period);}, 7);
             minimizer6.SetFunction(MLE6);
             minimizer6.SetMaxFunctionCalls(50000);
             minimizer6.SetMaxIterations(10000);

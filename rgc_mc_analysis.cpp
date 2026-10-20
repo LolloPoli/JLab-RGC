@@ -898,7 +898,7 @@ void rgc_mc_analysis(const char* period) {
     TH2D kp_MomVsZ ("_MomVsZ", "Correlation Mom vs z  |  K+  | with EventBuilder + RICH ; z; Mom [GeV]", nbin, 0.2, 1.0, nbin, 1, 8);
     TH2D kp_MomVsY ("_MomVsY", "Correlation Mom vs Y  |  K+  | with EventBuilder + RICH ; y; Mom [GeV]", nbin, 0.2, 0.8, nbin, 1, 8);
     TH2D kp_MomVsEta ("_MomVsEta", "Correlation Mom vs Eta  |  K+  | with EventBuilder + RICH ; Eta; Mom [GeV]", nbin, 1.5, 3.0, nbin, 1, 8);
-    TH2D kp_MomVsTheta ("_MomVsTheta", "Correlation Mom vs Theta  |  K+  | with EventBuilder + RICH ; Mom [GeV]; Theta [Rad]", nbin, 1, 8, nbin, 0.09, 0.4);
+    TH2D kp_MomVsTheta ("_MomVsTheta", "Correlation Mom vs Theta  |  K+  | with EventBuilder + RICH ; Mom [GeV]; Theta [Rad]", nbin, 1, 8, nbin, 0.09, 0.6);
     TH2D kp_MomVsPhi_h ("_MomVsPhi_h", "Correlation Mom vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; Mom [GeV]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 1, 8);
     TH2D kp_MomVsPhi_lab ("_MomVsPhi_lab", "Correlation Mom vs #Phi_{lab}  |  K+  | with EventBuilder + RICH ; #Phi_{lab} [Rad]; Mom [GeV]", nbin, -TMath::Pi(), TMath::Pi(), nbin, 1, 8);
     TH2D kp_MomVsMx ("_MomVsMx", "correlation Mom vs M_{x} | K+ |; Mom [GeV]; M_{x} [GeV]", nbin, 1, 8, nbin, 0.6, 3.5);
@@ -1137,8 +1137,8 @@ void rgc_mc_analysis(const char* period) {
 
     TH1D kp_mc_mom ("_MC_momentum", " MC momentum | K+ ; mom [GeV]; count", 150, 1, 8);
     TH1D kp_mom ("_momentum", " momentum | K+ ; mom [GeV]; count", 150, 1, 8);
-    TH2D kp_mc_mom_vs_theta ("_MC_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 5, 25);
-    TH2D kp_mom_vs_theta ("_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 5, 25);
+    TH2D kp_mc_mom_vs_theta ("_MC_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 0.09, 0.7);
+    TH2D kp_mom_vs_theta ("_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 0.09, 0.7);
 
     TH2D kp_binmig_xB ("bin_migration_xB", "bin migration matrix for xB | K+ ; x_{B} (RECO); x_{B} (MC)", nbin, 0, 0.8, nbin, 0, 0.8);
     TH2D kp_binmig_Q2 ("bin_migration_Q2", "bin migration matrix for Q^{2} | K+ ; Q^{2} (RECO); Q^{2} (MC)", nbin, 1, 10, nbin, 1, 10);
@@ -1173,7 +1173,7 @@ void rgc_mc_analysis(const char* period) {
         double index_zPt = getBinIndex_zPt(kaonp_z_mc, kaonp_PhT_mc);
         kp_mc_mom.Fill(kaonp_Ph_mc);
         double kp_mc_theta_deg = kaonp_Theta_mc * 180.0 / TMath::Pi();
-        kp_mc_mom_vs_theta.Fill(kaonp_Ph_mc, kp_mc_theta_deg);
+        kp_mc_mom_vs_theta.Fill(kaonp_Ph_mc, kaonp_Theta_mc);
         if(index_xQ2 >= 0 && index_zPt >= 0) {
             vec_kaonp_xB_4d_mc[index_xQ2-1][index_zPt-1].push_back(kaonp_xB_mc);
             if(helicity_mc == 1) {
@@ -1323,7 +1323,7 @@ void rgc_mc_analysis(const char* period) {
                 //
                 kp_mom.Fill(kaonp_Ph);
                 double kp_theta_deg = kaonp_Theta * 180.0 / TMath::Pi();
-                kp_mom_vs_theta.Fill(kaonp_Ph, kp_theta_deg);
+                kp_mom_vs_theta.Fill(kaonp_Ph, kaonp_Theta);
                 //
                 kp_MomVsMass_Rich.Fill(kaonp_Ph, kaonp_bestMass);
                 double beta_th = kaonp_Ph/(sqrt(ph2+0.01948816));
@@ -1428,6 +1428,8 @@ void rgc_mc_analysis(const char* period) {
     
     treeKaonP.Write();
 
+    kp_mc_mom_vs_theta.Write();
+    kp_mom_vs_theta.Write();
     //
     vector<double> x_points;
     vector<double> y_points;
@@ -1636,8 +1638,6 @@ void rgc_mc_analysis(const char* period) {
     kp_mom_ratio->GetYaxis()->SetRangeUser(0.0, 1.0);
     kp_mom_ratio->Write();
 
-    kp_mc_mom_vs_theta.Write();
-    kp_mom_vs_theta.Write();
     TH2D* kp_mom_theta_ratio = (TH2D*)kp_mom_vs_theta.Clone("kp_mom_theta_ratio");
     kp_mom_theta_ratio->Divide(&kp_mom_vs_theta, &kp_mc_mom_vs_theta, 1.0, 1.0, "B");
     kp_mom_theta_ratio->SetTitle("Kaon+ efficiency ; Momentum [GeV]; Theta [deg]");

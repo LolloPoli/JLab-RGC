@@ -1300,8 +1300,9 @@ void rgc_new_mc_analysis(const char* period) {
 
     TH1D kp_mc_mom ("_MC_momentum", " MC momentum | K+ ; mom [GeV]; count", 150, 1, 8);
     TH1D kp_mom ("_momentum", " momentum | K+ ; mom [GeV]; count", 150, 1, 8);
-    TH2D kp_mc_mom_vs_theta ("_MC_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 5, 25);
-    TH2D kp_mom_vs_theta ("_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 5, 25);
+    TH2D kp_mom_vs_theta_mc ("_MC_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 0.09, 0.7);
+    TH2D kp_mom_vs_theta ("_mom_vs_theta", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 0.09, 0.7);
+    TH2D kp_mom_vs_theta_reco ("_mom_vs_theta_reco", " MC momentum vs theta | K+ ; mom [GeV]; theta [deg]", 150, 1, 8, 150, 0.09, 0.7);
 
     TH2D kp_binmig_xB ("bin_migration_xB", "bin migration matrix for xB | K+ ; x_{B} (RECO); x_{B} (MC)", nbin, 0, 0.8, nbin, 0, 0.8);
     TH2D kp_binmig_Q2 ("bin_migration_Q2", "bin migration matrix for Q^{2} | K+ ; Q^{2} (RECO); Q^{2} (MC)", nbin, 1, 10, nbin, 1, 10);
@@ -1309,6 +1310,11 @@ void rgc_new_mc_analysis(const char* period) {
     TH2D kp_binmig_Pt ("bin_migration_Pt", "bin migration matrix for P_{hT} | K+ ; P_{hT} (RECO); P_{hT} (MC)", nbin, 0, 1.4, nbin, 0, 1.4);
     TH2D kp_bin_xQ2 ("bin_mig_xQ2", "bin migration matrix for xB | K+ ; bin xQ2 (MC); bin xQ2 (RECO)", 14, 1, 15, 14, 1, 15);
     TH2D kp_bin_zPt ("bin_mig_zPt", "bin migration matrix for z | K+ ; bin zPt (MC); bin zPt (RECO)", 24, 1, 25, 24, 1, 25);
+    TH2D plot_zPt_true ("plot_zPt_true", "plot z vs Pt | K+ ; z (MC); P_{hT} (MC)", 120, 0.2, 1.0, 120, 0, 1.4);
+    TH2D plot_zPt_trueRECO ("plot_zPt_trueRECO", "plot z vs Pt | K+ ; z (MC); P_{hT} (MC)", 120, 0.2, 1.0, 120, 0, 1.4);
+    TH2D plot_zPt_allID ("plot_zPt_allID", "plot z vs Pt | K+ ; z (RECO_MC); P_{hT} (RECO_MC)", 120, 0.2, 1.0, 120, 0, 1.4);
+    TH2D plot_zPt_preID ("plot_zPt_preID", "plot z vs Pt | K+ ; z (RECO_MC); P_{hT} (RECO_MC)", 120, 0.2, 1.0, 120, 0, 1.4);
+    TH2D plot_zPt_reco ("plot_zPt_reco", "plot z vs Pt | K+ ; z (RECO); P_{hT} (RECO)", 120, 0.2, 1.0, 120, 0, 1.4);
 
 
 
@@ -1337,10 +1343,11 @@ void rgc_new_mc_analysis(const char* period) {
     double dilution = 0.25;
     double beam_pol = 0.84;
     double PbPt = 0.71;
+    double kin_dep_max = 1.68;
 
-    double f_max_inject = 1.0 + dilution*0.85*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
-                            + dilution*0.85*beam_pol*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
-                            + beam_pol*(std::abs(A_LU_sin_inject));
+    double f_max_inject = 1.0 + dilution*0.85*kin_dep_max*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
+                            + dilution*0.85*beam_pol*kin_dep_max*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
+                            + beam_pol*kin_dep_max*(std::abs(A_LU_sin_inject));
 
     TRandom3 rng(12345);
     // MC
@@ -1349,48 +1356,57 @@ void rgc_new_mc_analysis(const char* period) {
     vector<double> fake_Ptarget_vec(MC_chainKaonP.GetEntries());   // salvato per riuso nel fit
     for (Long64_t i = 0; i < nEntries_mc; i++) {
         MC_chainKaonP.GetEntry(i);
+        if(kaonp_Ph_mc >= 3 && kaonp_Theta_mc >= 0.4) continue;
         if(std::fabs(kaonp_Phi_mc) < 2.5 && std::fabs(kaonp_Phi_mc) > 0.65 && kaonp_Ph_mc >= 3) continue; 
         double index_xQ2 = getBinIndex_xQ2(kaonp_xB_mc, kaonp_Q2_mc); 
         double index_zPt = getBinIndex_zPt(kaonp_z_mc, kaonp_PhT_mc);
         double kp_mc_theta_deg = kaonp_Theta_mc * 180.0 / TMath::Pi();
 
         // spin injection 
-            int fake_spinstate = (rng.Rndm() < 0.5) ? +1 : -1;   // one time per event
-            //int fake_spinstate = (rng.Rndm() < 0.5788) ? +1 : -1;
-            helicity_mc = (rng.Rndm() < 0.5) ? +1 : -1;
-            double fake_Pt = 0.85 * fake_spinstate;
-            fake_Ptarget_vec[i] = fake_Pt;
-            double bootw = rng.PoissonD(1.0);
+        int fake_spinstate = (rng.Rndm() < 0.5) ? +1 : -1;   // one time per event
+        //int fake_spinstate = (rng.Rndm() < 0.5788) ? +1 : -1;
+        helicity_mc = (rng.Rndm() < 0.5) ? +1 : -1;
+        double fake_Pt = 0.85 * fake_spinstate;
+        fake_Ptarget_vec[i] = fake_Pt;
+        double bootw = rng.PoissonD(1.0);
 
-            // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
-            // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
+        // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
+        // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
 
-            const double z0  = 0.4;
-            const double Pt0 = 0.5;
-            const double cz  = 0.8;
-            const double cPt = 0.5;
+        const double z0   = 0.44;  // old 0.4
+        const double Pt0  = 0.39;  // old 0.5
+        const double xB0  = 0.26; // old 0.3
+        const double Q20  = 2.77;  // old 4.0
 
-            double A_UL_sin_inject_dep = A_UL_sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
-            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_mc  - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0));
+        const double cz   = 0.45;
+        const double cPt  = 0.35;
+        const double cxB  = 0.25;
+        const double cQ2  = 0.025;   // 1/GeV^2
 
-            // ========================================================================================
+        double kin_dep = (1.0 + cz  * (kaonp_z_mc - z0)) * (1.0 + cPt * (kaonp_PhT_mc - Pt0)) * (1.0 + cxB * (kaonp_xB_mc  - xB0)) * (1.0 + cQ2 * (kaonp_Q2_mc  - Q20));
+        //double kin_dep_LL = 1.0 + 0.5 * (kin_dep - 1.0);
 
-            double eps = kaonp_epsilon_mc, y = kaonp_y_mc;
-            double A = (y*y)/(2*(1-eps));
-            double B = A*eps, C = A*sqrt(1-eps*eps);
-            double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
+        double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
+        double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
+        double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
+        double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
+        double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
 
-            double UL_mod = (V/A) * A_UL_sin_inject_dep*sin(kaonp_Phi_h_mc) + (B/A) * A_UL_2sin_inject_dep*sin(2*kaonp_Phi_h_mc); // added dependences
-            double LL_mod = (C/A) * A_LL_0_inject_dep + (W/A) * A_LL_cos_inject_dep*cos(kaonp_Phi_h_mc);
-            double LU_mod = (W/A) * A_LU_sin_inject_dep*sin(kaonp_Phi_h_mc);
+        // ========================================================================================
 
-            //double f = 1.0 + helicity_mc*LU_mod + dilution*fake_Pt*beam_pol*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  
-            double f = 1.0 + helicity_mc*beam_pol*LU_mod + dilution*fake_Pt*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  // beampol
-            double u = f_max_inject * rng.Rndm();   
-            keep_injected[i] = (u < f);
+        double eps = kaonp_epsilon_mc, y = kaonp_y_mc;
+        double A = (y*y)/(2*(1-eps));
+        double B = A*eps, C = A*sqrt(1-eps*eps);
+        double V = A*sqrt(2*eps*(1+eps)), W = A*sqrt(2*eps*(1-eps));
+
+        double UL_mod = (V/A) * A_UL_sin_inject_dep*sin(kaonp_Phi_h_mc) + (B/A) * A_UL_2sin_inject_dep*sin(2*kaonp_Phi_h_mc); // added dependences
+        double LL_mod = (C/A) * A_LL_0_inject_dep + (W/A) * A_LL_cos_inject_dep*cos(kaonp_Phi_h_mc);
+        double LU_mod = (W/A) * A_LU_sin_inject_dep*sin(kaonp_Phi_h_mc);
+
+        //double f = 1.0 + helicity_mc*LU_mod + dilution*fake_Pt*beam_pol*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  
+        double f = 1.0 + helicity_mc*beam_pol*LU_mod + dilution*fake_Pt*UL_mod + dilution*beam_pol*helicity_mc*fake_Pt*LL_mod;  // beampol
+        double u = f_max_inject * rng.Rndm();   
+        keep_injected[i] = (u < f);
         // 
         if(index_xQ2 >= 0 && index_zPt >= 0) {
             vec_kaonp_xB_4d_mc[index_xQ2-1][index_zPt-1].push_back(kaonp_xB_mc);
@@ -1419,6 +1435,9 @@ void rgc_new_mc_analysis(const char* period) {
                 vec_kaonp_pol_2d_zPt_mc[index_zPt-1].push_back(fake_Pt);
                 vec_kaonp_eps_2d_zPt_mc[index_zPt-1].push_back(kaonp_epsilon_mc);
                 vec_kaonp_spin_2d_zPt_mc[index_zPt-1].push_back(fake_spinstate);
+                //
+                plot_zPt_true.Fill(kaonp_z_mc, kaonp_PhT_mc);
+                kp_mom_vs_theta_mc.Fill(kaonp_Ph_mc, kaonp_Theta_mc);
             }
             if(helicity_mc == 1) {
                 vec_helicity_pos_mc[index_xQ2-1][index_zPt-1].push_back(helicity_mc);
@@ -1438,7 +1457,8 @@ void rgc_new_mc_analysis(const char* period) {
         // RICH cut
         //if (electron_ass != 321) continue;
         chainKaonP.GetEntry(i);
-        if(std::fabs(kaonp_Phi) < 2.5 && std::fabs(kaonp_Phi) > 0.65 && kaonp_Ph >= 3) continue;
+        if(kaonp_Ph >= 3 && kaonp_Theta_recoMC >= 0.4) continue;
+        if(std::fabs(kaonp_Phi_recoMC) < 2.5 && std::fabs(kaonp_Phi_recoMC) > 0.65 && kaonp_Ph >= 3) continue;
 
         // ======================================================================================================================
         // spin injection 
@@ -1451,16 +1471,23 @@ void rgc_new_mc_analysis(const char* period) {
 
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
 
-            const double z0  = 0.4;
-            const double Pt0 = 0.5;
-            const double cz  = 0.8;
-            const double cPt = 0.5;
+            const double z0   = 0.44;  // old 0.4
+            const double Pt0  = 0.39;  // old 0.5
+            const double xB0  = 0.26; // old 0.3
+            const double Q20  = 2.77;  // old 4.0
 
-            double A_UL_sin_inject_dep  = A_UL_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
-            double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (kaonp_z_recoMC  - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0));
+            const double cz   = 0.45;
+            const double cPt  = 0.35;
+            const double cxB  = 0.25;
+            const double cQ2  = 0.025;   // 1/GeV^2
+
+            double kin_dep = (1.0 + cz  * (kaonp_z_recoMC - z0)) * (1.0 + cPt * (kaonp_Pt_recoMC - Pt0)) * (1.0 + cxB * (kaonp_xB_recoMC  - xB0)) * (1.0 + cQ2 * (kaonp_Q2_recoMC  - Q20));
+
+            double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
+            double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
+            double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
+            double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
 
             // ========================================================================================
 
@@ -1519,12 +1546,15 @@ void rgc_new_mc_analysis(const char* period) {
                     vec_kaonp_pol_2d_zPt_all_ID[mc_index_zPt_all_ID-1].push_back(fake_Pt);
                     vec_kaonp_eps_2d_zPt_all_ID[mc_index_zPt_all_ID-1].push_back(kaonp_epsilon_recoMC);
                     vec_kaonp_spin_2d_zPt_all_ID[mc_index_zPt_all_ID-1].push_back(fake_spinstate);
+
+                    // 
+                    plot_zPt_allID.Fill(kaonp_z_recoMC, kaonp_Pt_recoMC);
                 }
             }
         }
 
         if(mc_PID != 321) continue;
-
+        kp_mom_vs_theta.Fill(kaonp_Ph, kaonp_Theta_recoMC);
 
         // raw for cavariance
         double mc_index_xQ2_raw = getBinIndex_xQ2(kaonp_xB_recoMC, kaonp_Q2_recoMC);
@@ -1566,6 +1596,9 @@ void rgc_new_mc_analysis(const char* period) {
                 vec_kaonp_pol_2d_zPt_preID[mc_index_zPt_preCut-1].push_back(fake_Pt);
                 vec_kaonp_eps_2d_zPt_preID[mc_index_zPt_preCut-1].push_back(kaonp_epsilon_recoMC);
                 vec_kaonp_spin_2d_zPt_preID[mc_index_zPt_preCut-1].push_back(fake_spinstate);
+
+                //
+                plot_zPt_preID.Fill(kaonp_z_recoMC, kaonp_Pt_recoMC);
             }
         }
 
@@ -1615,6 +1648,9 @@ void rgc_new_mc_analysis(const char* period) {
                     vec_kaonp_pol_2d_zPt_true[mc_index_zPt-1].push_back(fake_Pt);
                     vec_kaonp_eps_2d_zPt_true[mc_index_zPt-1].push_back(kaonp_epsilon_recoMC);
                     vec_kaonp_spin_2d_zPt_true[mc_index_zPt-1].push_back(fake_spinstate);
+
+                    //
+                    plot_zPt_trueRECO.Fill(kaonp_z_recoMC, kaonp_Pt_recoMC);
                     }
                 }
                 if(index_xQ2 >= 0) {
@@ -1631,6 +1667,7 @@ void rgc_new_mc_analysis(const char* period) {
                         vec_kaonp_eps_2d[index_xQ2-1].push_back(kaonp_epsilon);
                         vec_kaonp_spin_2d[index_xQ2-1].push_back(fake_spinstate);
                         vec_kaonp_sintheta_2d[index_xQ2-1].push_back(kaonp_sintheta);
+                        kp_mom_vs_theta_reco.Fill(kaonp_Ph, kaonp_Theta);
                     }
                 }
                 if(index_zPt >= 0){ 
@@ -1648,6 +1685,9 @@ void rgc_new_mc_analysis(const char* period) {
                         //if (index_zPt == 16) cout << kaonp_epsilon << endl;
                         vec_kaonp_spin_2d_zPt[index_zPt-1].push_back(fake_spinstate);
                         vec_kaonp_sintheta_2d_zPt[index_zPt-1].push_back(kaonp_sintheta);
+
+                        //
+                        plot_zPt_reco.Fill(kaonp_z, kaonp_PhT);
                     }
                     if(index_xQ2 >= 0 && index_zPt >= 0){
                         vec_kaonp_phih_4d[index_xQ2-1][index_zPt-1].push_back(kaonp_Phi_h);
@@ -1683,6 +1723,9 @@ void rgc_new_mc_analysis(const char* period) {
     
     
     treeKaonP.Write();
+    kp_mom_vs_theta_mc.Write();
+    kp_mom_vs_theta.Write();
+    kp_mom_vs_theta_reco.Write();
 
     //
     vector<double> x_points;
@@ -1758,7 +1801,42 @@ void rgc_new_mc_analysis(const char* period) {
 
     //
 
+    TH2D *eff = (TH2D*)plot_zPt_trueRECO.Clone("eff");
+    eff->Divide(&plot_zPt_true);
+
+    eff->SetMinimum(0.0);
+    eff->SetMaximum(1.0);
+    eff->Draw("COLZ");
+    eff->Write();
+
+    TH2D *mc = (TH2D*)plot_zPt_true.Clone("mc_norm");
+    TH2D *reco = (TH2D*)plot_zPt_trueRECO.Clone("reco_norm");
+    mc->Scale(1.0 / mc->Integral());
+    reco->Scale(1.0 / reco->Integral());
+    TH2D *diff = (TH2D*)mc->Clone("diff");
+    diff->Add(reco, -1.0);   // MC_norm - Reco_norm
+    diff->Draw("COLZ");
+    diff->Write();
+
+    TH2D *lost = (TH2D*)plot_zPt_true.Clone("lost");
+    lost->Reset();
+
+    for (int ix = 1; ix <= plot_zPt_true.GetNbinsX(); ++ix) {
+        for (int iy = 1; iy <= plot_zPt_true.GetNbinsY(); ++iy) {
+
+            double mc   = plot_zPt_true.GetBinContent(ix, iy);
+            double reco = plot_zPt_trueRECO.GetBinContent(ix, iy);
+
+            if (mc > 0 && reco == 0)
+                lost->SetBinContent(ix, iy, 1.0);
+        }
+    }
+
+    lost->Draw("COLZ");
+    lost->Write();
+
     std::vector<TH2D*> hists_kp = {
+        &plot_zPt_true, &plot_zPt_trueRECO, &plot_zPt_reco, &plot_zPt_preID, &plot_zPt_allID,
         &kp_MomVsPhT, &kp_MomVsXb, &kp_MomVsXf, &kp_MomVsZ, &kp_MomVsY, &kp_MomVsEta,
         &kp_MomVsTheta, &kp_MomVsPhi_h, &kp_MomVsPhi_lab, &kp_MomVsMx, &kp_MomVsBeta, &kp_MomVsCh, &kp_MomVsMass_Rich, &kp_MomvsSinTheta, &kp_MomVsEps,
         &kp_Q2VsXb, &kp_Q2VsXf, &kp_Q2VsMom, &kp_Q2VsPhT, &kp_Q2VsZ, &kp_Q2VsY, &kp_Q2VsEta, &kp_Q2VsPhi_h, &kp_Q2vsSinTheta, &kp_Q2VsEps, &kp_Q2VsMx,
@@ -1833,7 +1911,7 @@ void rgc_new_mc_analysis(const char* period) {
     dir_zPt->cd();
     TCanvas *c_bin_zPt = new TCanvas("z_vs_Pt_Bin", "z vs P_{hT} bin", 800, 700);
     c_bin_zPt->SetLogz();
-    kp_PhTvsZ.Draw("COLZ");
+    lost->Draw("COLZ");
 
     vector<TPolyLine*> gridLines_zp;
     vector<TText*> labels_zp;
@@ -3440,6 +3518,31 @@ void rgc_new_mc_analysis(const char* period) {
         double mean_Pt = sum_Pt / vec_kaonp_Pt_2d_zPt[iz].size();
         for(double valeps : vec_kaonp_eps_2d_zPt[iz]) sum_eps += valeps;
         double mean_eps = sum_eps / vec_kaonp_eps_2d_zPt[iz].size();
+
+        //
+        const double z0   = 0.44;  // old 0.4
+        const double Pt0  = 0.39;  // old 0.5
+        const double xB0  = 0.26; // old 0.3
+        const double Q20  = 2.77;  // old 4.0
+
+        const double cz   = 0.45;
+        const double cPt  = 0.35;
+        const double cxB  = 0.25;
+        const double cQ2  = 0.025;   // 1/GeV^2
+
+        double kin_dep = (1.0 + cz  * (mean_z - z0)) * (1.0 + cPt * (mean_Pt - Pt0)) * (1.0 + cxB * (mean_xB  - xB0)) * (1.0 + cQ2 * (mean_Q2  - Q20));
+
+        double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
+        double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
+        double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
+        double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
+        double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+        //
+        cout << "iz: " << iz << " AUL_sinPhi_inj_bias = " << AUL_sin_2d_zPt_mc[iz] - A_UL_sin_inject_dep << "+/-" << AUL_sin_err_2d_zPt_mc[iz]
+        << " AUL_sin2Phi_inj_bias = " << AUL_2sin_2d_zPt_mc[iz] - A_UL_2sin_inject_dep << "+/-" << AUL_2sin_err_2d_zPt_mc[iz]
+        << " ALL_const_inj_bias = " << ALL_0_2d_zPt_mc[iz] - A_LL_0_inject_dep << "+/-" << ALL_0_err_2d_zPt_mc[iz]
+        << " ALL_cosPhi_inj_bias = " << ALL_cos_2d_zPt_mc[iz] - A_LL_cos_inject_dep << "+/-" << ALL_cos_err_2d_zPt_mc[iz]
+        << " ALU_sinPhi_inj_bias = " << ALU_sin_2d_zPt_mc[iz] - A_LU_sin_inject_dep << "+/-" << ALU_sin_err_2d_zPt_mc[iz] << endl;
         csvFile_zPt << vec_kaonp_y_2d_zPt[iz].size() << "," << "NaN" << "," << iz+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << ","
                 << 0 << "," << 0 << "," 
                 << AUL_sin_2d_zPt_preID[iz] - AUL_sin_2d_zPt_true[iz] << "," << sqrt(AUL_sin_err_2d_zPt_preID[iz]*AUL_sin_err_2d_zPt_preID[iz] - AUL_sin_err_2d_zPt_true[iz]*AUL_sin_err_2d_zPt_true[iz]) << ","

@@ -12,7 +12,7 @@ import os
 # Scegli:
 #   "zPt" -> binning z-P_hT, con 4 pannelli
 #   "xQ2" -> binning xB-Q2, con un singolo pannello
-binning = "xQ2"
+binning = "zPt"
 
 # ============================================================
 # CONFIGURAZIONE DIPENDENTE DAL BINNING
@@ -26,8 +26,8 @@ if binning == "zPt":
     asym_fall22_file = "RECO_CSV/output_RGC_NH3_asymmetries_fall22.csv"
 
     # CSV sistematiche
-    sys_sum22_file = "TOY_diagnostics/toy_summary_summer22_zPt.csv"
-    sys_fall22_file = "TOY_diagnostics/toy_summary_fall22_zPt.csv"
+    sys_sum22_file = "TOY_diagnostics3/toy_summary_summer22_zPt.csv"
+    sys_fall22_file = "TOY_diagnostics3/toy_summary_fall22_zPt.csv"
 
     # colonne CSV asimmetrie
     asym_bin_column = "bin_zPt"
@@ -48,8 +48,8 @@ elif binning == "xQ2":
     asym_fall22_file = "RECO_CSV/output_RGC_NH3_asymmetries_fall22_xQ2.csv"
 
     # CSV sistematiche
-    sys_sum22_file = "TOY_diagnostics/toy_summary_summer22_xQ2.csv"
-    sys_fall22_file = "TOY_diagnostics/toy_summary_fall22_xQ2.csv"
+    sys_sum22_file = "TOY_diagnostics3/toy_summary_summer22_xQ2.csv"
+    sys_fall22_file = "TOY_diagnostics3/toy_summary_fall22_xQ2.csv"
 
     # colonne CSV asimmetrie
     asym_bin_column = "bin_xQ2"
