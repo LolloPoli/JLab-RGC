@@ -37,63 +37,82 @@ double MeanVect(const vector<double>& v) {
     return sum / v.size();
 }
 
-double AUL_loglike(const double* Aul,
-                   const vector<double>& phi_h,
-                   const vector<double>& spinstate, // +1 or -1 for target orientation
-                   const vector<double>& depol,  // D(kin) or 1 if not used
-                   const vector<double>& Ptarget, // nominal P_target
-                   const vector<double>& sintheta,
-                   bool use_spinstate_for_helicity = true)
-{
-    double logLike = 0.0;
-    const double A_sin  = Aul[0];
-    const double A_sin2 = Aul[1]; 
-    //const double A_sin3 = Aul[2];
-    double dilution = 1;
-    // rapporto di luminosità osservato (N+ / N−)
-    double Nplus = 0.0;
-    double Nminus = 0.0;
-    for (size_t i = 0; i < Ptarget.size(); ++i) {
-        if (Ptarget[i] > 0) Nplus++;
-        else               Nminus++;
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <stdexcept>
+#include <cmath>
+#include <cstring>
+
+double getDilutionFactor(const char* period, int binning, int bin){
+    // Cache: one set of dilution factors per campaign
+    static double df_xQ2[3][15] = {};  // 14 bins, indexed 1–14
+    static double df_zPt[3][26] = {};  // 25 bins, indexed 1–25
+    static bool loaded[3] = {false, false, false};
+    int p = -1;
+    std::string filename;
+    if (strcmp(period, "sum22") == 0) {
+        p = 0;
+        filename = "DF_Kplus_summer22.csv";
     }
-    double r = Nplus / Nminus;
+    else if (strcmp(period, "fall22") == 0) {
+        p = 1;
+        filename = "DF_Kplus_fall22.csv";
+    }
+    else if (strcmp(period, "spring23") == 0) {
+        p = 2;
+        filename = "DF_Kplus_spring23.csv";
+    }
+    else {
+        throw std::runtime_error("Unknown period: " + std::string(period));
+    }
+    // Load CSV only once per campaign
+    if (!loaded[p]) {
+        std::ifstream file(filename);
+        if (!file.is_open())
+            throw std::runtime_error("Cannot open DF file: " + filename);
+        std::string line;
+        std::getline(file, line);  // Skip header
+        while (std::getline(file, line)) {
+            std::stringstream ss(line);
+            std::vector<std::string> col;
+            std::string value;
+            while (std::getline(ss, value, ','))
+                col.push_back(value);
 
-    for (size_t i = 0; i < phi_h.size(); ++i) {
-        double eps = depol[i];
-        double D_sin  = sqrt(2*eps*(1+eps));
-        double D_2sin = eps;
+            if (col.size() < 9)
+                continue;
 
-        // modello di asimmetria
-        double modulation = D_sin * A_sin * sin(phi_h[i]) + D_2sin * A_sin2 * sin(2.0*phi_h[i]);
+            const std::string& type = col[1];
+            int index = std::stoi(col[2]);
+            double df = std::stod(col[7]);
 
-        double pol_factor = Ptarget[i] * dilution; 
-
-        // correzione per luminosità asimmetrica
-        double Seff = pol_factor * modulation;
-        double numer = r * (1.0 + Seff);
-        double denom = r * (1.0 + Seff) + (1.0 - Seff);
-        double arg = numer / denom; // probabilità per spin = +1 
-
-        // gestione spin state
-        double prob;
-        if (use_spinstate_for_helicity) {
-            if (spinstate[i] == +1) {
-                prob = arg;
-            } else {
-                prob = 1.0 - arg;
-            }
-        } else {
-            prob = arg;
+            // Set to 5.86/5.0 ONLY if CSV was produced
+            // with pfcell=true. Otherwise use 1.0.
+            constexpr double pfScale = 1.0;
+            df *= pfScale;
+            if (!std::isfinite(df))
+                continue;
+            if (type == "xB_Q2" && index >= 1 && index <= 14)
+                df_xQ2[p][index] = df;
+            else if (type == "z_Pt" && index >= 1 && index <= 25)
+                df_zPt[p][index] = df;
         }
-
-        if (prob <= 1e-8) return 1e-8;
-        logLike += log(prob);
+        loaded[p] = true;
     }
 
-    return -logLike;
-}
+    if (binning == 1 && bin >= 1 && bin <= 14 && df_xQ2[p][bin] > 0)
+        return df_xQ2[p][bin];
 
+    if (binning == 2 && bin >= 1 && bin <= 25 && df_zPt[p][bin] > 0)
+        return df_zPt[p][bin];
+
+    throw std::runtime_error(
+        "Dilution factor not found for period " +
+        std::string(period) + ", bin " + std::to_string(bin)
+    );
+}
 
 double AUL_loglike_withLL(const double* Aul,
                           const vector<double>& phi_h,
@@ -103,6 +122,7 @@ double AUL_loglike_withLL(const double* Aul,
                           const vector<double>& Ptarget,     // target polarization
                           const vector<double>& helicity,    // beam helicity (+1 / -1)
                           const vector<double>& sintheta,
+                          const double dilution,
                           bool use_spinstate_for_helicity = true,
                           const char* target = "NH3",
                           const char* campaign = "fall22")
@@ -122,14 +142,14 @@ double AUL_loglike_withLL(const double* Aul,
 
     // -------- Dilution factor & Relative luminosity weights --------
 
-    double dilution = 0.24;  // default NH3
+    //double dilution = 0.24;  // default NH3
     double w = 1.0;
     double w_pp = 1.0; // beam +1 , target +1
     double w_mp = 1.0; // beam -1 , target +1
     double w_pm = 1.0; // beam +1 , target -1
     double w_mm = 1.0; // beam -1 , target -1
     if (strcmp(target, "NH3") == 0){
-        dilution = 0.24;
+        //dilution = 0.24;
         if (strcmp(campaign, "fall22") == 0){
             w_pp = 0.934205;
             w_mp = 0.935465;
@@ -153,7 +173,7 @@ double AUL_loglike_withLL(const double* Aul,
         }
     } 
     else if (strcmp(target, "ND3") == 0){
-        dilution = 0.32;
+        //dilution = 0.32;
         if (strcmp(campaign, "fall22") == 0){
             w_pp = 0.998544;
             w_mp = 1.0;
@@ -834,6 +854,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     vector<vector<double>> vec_kaonp_sintheta_2d(nbin_xQ2);
     vector<vector<double>> vec_kaonp_phih_plus_2d(nbin_xQ2);
     vector<vector<double>> vec_kaonp_phih_minus_2d(nbin_xQ2);
+    vector<double> vec_dilution_xQ2(nbin_xQ2);
     // zPt bins
     vector<vector<double>> vec_kaonp_phih_2d_zPt(nbin_zPt);
     vector<vector<double>> vec_helicity_2d_zPt(nbin_zPt);
@@ -849,6 +870,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     vector<vector<double>> vec_kaonp_sintheta_2d_zPt(nbin_zPt);
     vector<vector<double>> vec_kaonp_phih_plus_2d_zPt(nbin_zPt);
     vector<vector<double>> vec_kaonp_phih_minus_2d_zPt(nbin_zPt);
+    vector<double> vec_dilution_zPt(nbin_zPt);  
     //
     vector<vector<vector<double>>> vec_kaonp_phih_4d(nbin_xQ2, vector<vector<double>> (nbin_zPt));
     vector<vector<vector<double>>> vec_helicity_4d(nbin_xQ2, vector<vector<double>> (nbin_zPt));
@@ -1517,12 +1539,18 @@ void rgc_analysis_1D(const char* period, const char* target) {
 
 
 
+    for (int i = 0; i < nbin_xQ2; i++) {
+        vec_dilution_xQ2[i] = getDilutionFactor(period, 1, i + 1);
+    }
+    for (int i = 0; i < nbin_zPt; i++) {
+        vec_dilution_zPt[i] = getDilutionFactor(period, 2, i + 1);
+    }
 
     // ASYMMETRIES xQ2
     for (int x = 0; x < nbin_xQ2; x++){ 
         ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
         //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_kaonp_sintheta_2d[x], false);}, 2);
-        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_y_2d[x],vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_sintheta_2d[x], true, target, period);}, 7);
+        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_y_2d[x],vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_sintheta_2d[x], vec_dilution_xQ2[x], true, target, period);}, 7);
         minimizer.SetFunction(MLE);
         minimizer.SetMaxFunctionCalls(50000);
         minimizer.SetMaxIterations(10000);
@@ -1581,7 +1609,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     for (int z = 0; z < nbin_zPt; z++){ 
         ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
         //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_kaonp_sintheta_2d[x], false);}, 2);
-        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_sintheta_2d_zPt[z], true, target, period);}, 7);
+        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_sintheta_2d_zPt[z], vec_dilution_zPt[z], true, target, period);}, 7);
         minimizer.SetFunction(MLE);
         minimizer.SetMaxFunctionCalls(50000);
         minimizer.SetMaxIterations(10000);

@@ -1335,6 +1335,14 @@ void rgc_new_mc_analysis(const char* period) {
     vector<vector<vector<double>>> vec_helicity_neg_all_preIDcut(nbin_xQ2, vector<vector<double>> (nbin_zPt));
 
 
+    // INJECTED ASYMMETRY
+    vector<vector<double>> vec_AUL_sinPhi_inj_zPt(nbin_zPt);
+    vector<vector<double>> vec_AUL_sin2Phi_inj_zPt(nbin_zPt);
+    vector<vector<double>> vec_ALL_inj_zPt(nbin_zPt);
+    vector<vector<double>> vec_ALL_cosPhi_inj_zPt(nbin_zPt);
+    vector<vector<double>> vec_ALU_sinPhi_inj_zPt(nbin_zPt);
+
+
     double A_UL_sin_inject  = 0.1;
     double A_UL_2sin_inject = 0.1;
     double A_LL_0_inject    = 0.4;
@@ -1345,9 +1353,20 @@ void rgc_new_mc_analysis(const char* period) {
     double PbPt = 0.71;
     double kin_dep_max = 1.68;
 
-    double f_max_inject = 1.0 + dilution*0.85*kin_dep_max*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
-                            + dilution*0.85*beam_pol*kin_dep_max*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
-                            + beam_pol*kin_dep_max*(std::abs(A_LU_sin_inject));
+    const double kin_UL_sin_max  = 2.10;
+    const double kin_UL_2sin_max = 1.85;
+    const double kin_LL_0_max    = 1.50;
+    const double kin_LL_cos_max  = 1.90;
+    const double kin_LU_sin_max  = 2.10;
+    const double BA_max = 1.0;
+    const double CA_max = 1.0;
+    const double VA_max = 1.95;
+    const double WA_max = 0.72;
+
+
+    double f_max_inject = 1.0 + dilution*0.85*(std::abs(A_UL_sin_inject)*kin_UL_sin_max*VA_max + std::abs(A_UL_2sin_inject)*kin_UL_2sin_max*BA_max)
+                            + dilution*0.85*beam_pol*(std::abs(A_LL_0_inject)*kin_LL_0_max*CA_max + std::abs(A_LL_cos_inject)*kin_LL_cos_max*WA_max)
+                            + beam_pol*(std::abs(A_LU_sin_inject)*kin_LU_sin_max*WA_max);
 
     TRandom3 rng(12345);
     // MC
@@ -1371,13 +1390,15 @@ void rgc_new_mc_analysis(const char* period) {
         double bootw = rng.PoissonD(1.0);
 
         // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
-        // it would be necessary add also xB and Q2 dependences, but only at the end when I will produce the result also for those binning.
 
-        const double z0   = 0.44;  // old 0.4
-        const double Pt0  = 0.39;  // old 0.5
-        const double xB0  = 0.26; // old 0.3
-        const double Q20  = 2.77;  // old 4.0
-
+        // Reference kinematics
+        const double z0  = 0.44;
+        const double Pt0 = 0.39;   // GeV
+        const double xB0 = 0.26;
+        const double Q20 = 2.77;   // GeV^2
+        
+        // COMMON KINEMATIC DEPENDENCE PARAMETERS FOR ALL ASYMMETRIES 
+        /*
         const double cz   = 0.45;
         const double cPt  = 0.35;
         const double cxB  = 0.25;
@@ -1391,7 +1412,58 @@ void rgc_new_mc_analysis(const char* period) {
         double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
         double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
         double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+        */
 
+        // NEW TMD DEPENDECE
+
+        // Reconstructed MC kinematics
+        const double z  = kaonp_z_mc;
+        const double Pt = kaonp_PhT_mc;
+        const double xB = kaonp_xB_mc;
+        const double Q2 = kaonp_Q2_mc;
+
+        // Kinematic variations
+        const double dz  = z  - z0;
+        const double dPt = Pt - Pt0;
+        const double dxB = xB - xB0;
+
+        // Twist-3 suppression relative to the reference point
+        const double twist3_Q = std::sqrt(Q20 / Q2);
+        
+        // Mild transverse-momentum dependence
+        const double fPt_linear = 1.0 + 0.25 * dPt;
+        // Stronger, quadratic transverse-momentum dependence
+        const double fPt_quadratic = 1.0 + 0.35 * (Pt * Pt - Pt0 * Pt0);
+
+        // UL sin(phi): twist-3
+        const double kin_UL_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+        // UL sin(2phi): leading twist, stronger Pt dependence
+        const double kin_UL_2sin = (1.0 + 0.30 * dz) * fPt_quadratic * (1.0 + 0.20 * dxB);
+        // LL constant: leading twist, stronger xB dependence
+        const double kin_LL_0 = (1.0 + 0.80 * dxB) * (1.0 + 0.15 * dz);
+        // LL cos(phi): twist-3
+        const double kin_LL_cos = (1.0 + 0.30 * dxB) * fPt_linear * twist3_Q;
+        // LU sin(phi): twist-3
+        const double kin_LU_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+
+        double A_UL_sin_inject_dep = A_UL_sin_inject * kin_UL_sin;
+        double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_UL_2sin;
+        double A_LL_0_inject_dep = A_LL_0_inject * kin_LL_0;
+        double A_LL_cos_inject_dep = A_LL_cos_inject * kin_LL_cos;
+        double A_LU_sin_inject_dep = A_LU_sin_inject * kin_LU_sin;
+
+        
+        if (kin_UL_sin < 0.0 || kin_UL_2sin < 0.0 || kin_LL_0 < 0.0 || kin_LL_cos < 0.0 || kin_LU_sin < 0.0) {
+            std::cerr << "Warning: Negative kinematic dependence factor detected!" << std::endl;
+        }
+        //  || kin_UL_2sin > 1.5 || kin_LL_0 > 0.95 || kin_LL_cos > 1.8 || kin_LU_sin > 2.0
+        else if (kin_LL_cos < 0.86) {
+            std::cerr << "Warning: Kinematic dependence factor exceeds expected range!" << std::endl;
+            std::cerr << "kin_UL_sin: " << kin_UL_sin << ", kin_UL_2sin: " << kin_UL_2sin
+                      << ", kin_LL_0: " << kin_LL_0 << ", kin_LL_cos: " << kin_LL_cos
+                      << ", kin_LU_sin: " << kin_LU_sin << std::endl;
+        }
+        
         // ========================================================================================
 
         double eps = kaonp_epsilon_mc, y = kaonp_y_mc;
@@ -1438,6 +1510,13 @@ void rgc_new_mc_analysis(const char* period) {
                 //
                 plot_zPt_true.Fill(kaonp_z_mc, kaonp_PhT_mc);
                 kp_mom_vs_theta_mc.Fill(kaonp_Ph_mc, kaonp_Theta_mc);
+
+                // injected asymmetries
+                vec_AUL_sinPhi_inj_zPt[index_zPt-1].push_back(A_UL_sin_inject_dep);
+                vec_AUL_sin2Phi_inj_zPt[index_zPt-1].push_back(A_UL_2sin_inject_dep);
+                vec_ALL_inj_zPt[index_zPt-1].push_back(A_LL_0_inject_dep);
+                vec_ALL_cosPhi_inj_zPt[index_zPt-1].push_back(A_LL_cos_inject_dep);
+                vec_ALU_sinPhi_inj_zPt[index_zPt-1].push_back(A_LU_sin_inject_dep);
             }
             if(helicity_mc == 1) {
                 vec_helicity_pos_mc[index_xQ2-1][index_zPt-1].push_back(helicity_mc);
@@ -1476,6 +1555,7 @@ void rgc_new_mc_analysis(const char* period) {
             const double xB0  = 0.26; // old 0.3
             const double Q20  = 2.77;  // old 4.0
 
+            /*
             const double cz   = 0.45;
             const double cPt  = 0.35;
             const double cxB  = 0.25;
@@ -1488,6 +1568,45 @@ void rgc_new_mc_analysis(const char* period) {
             double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
             double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
             double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+            */
+
+            // NEW TMD DEPENDECE
+
+            // Reconstructed MC kinematics
+            const double z  = kaonp_z_recoMC;
+            const double Pt = kaonp_Pt_recoMC;
+            const double xB = kaonp_xB_recoMC;
+            const double Q2 = kaonp_Q2_recoMC;
+
+            // Kinematic variations
+            const double dz  = z  - z0;
+            const double dPt = Pt - Pt0;
+            const double dxB = xB - xB0;
+
+            // Twist-3 suppression relative to the reference point
+            const double twist3_Q = std::sqrt(Q20 / Q2);
+            
+            // Mild transverse-momentum dependence
+            const double fPt_linear = 1.0 + 0.25 * dPt;
+            // Stronger, quadratic transverse-momentum dependence
+            const double fPt_quadratic = 1.0 + 0.35 * (Pt * Pt - Pt0 * Pt0);
+
+            // UL sin(phi): twist-3
+            const double kin_UL_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+            // UL sin(2phi): leading twist, stronger Pt dependence
+            const double kin_UL_2sin = (1.0 + 0.30 * dz) * fPt_quadratic * (1.0 + 0.20 * dxB);
+            // LL constant: leading twist, stronger xB dependence
+            const double kin_LL_0 = (1.0 + 0.80 * dxB) * (1.0 + 0.15 * dz);
+            // LL cos(phi): twist-3
+            const double kin_LL_cos = (1.0 + 0.30 * dxB) * fPt_linear * twist3_Q;
+            // LU sin(phi): twist-3
+            const double kin_LU_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+
+            double A_UL_sin_inject_dep = A_UL_sin_inject * kin_UL_sin;
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_UL_2sin;
+            double A_LL_0_inject_dep = A_LL_0_inject * kin_LL_0;
+            double A_LL_cos_inject_dep = A_LL_cos_inject * kin_LL_cos;
+            double A_LU_sin_inject_dep = A_LU_sin_inject * kin_LU_sin;
 
             // ========================================================================================
 
@@ -2612,16 +2731,18 @@ void rgc_new_mc_analysis(const char* period) {
 
         double sum_pt = 0.0;
         double sum_z2 = 0.0;
+        double sum_q2 = 0.0;
         for (double val : vec_kaonp_Pt_2d_zPt_mc[z]) sum_pt += val;
         double mean_pt = sum_pt / vec_kaonp_Pt_2d_zPt_mc[z].size();
         for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
         double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
+        for (double val : vec_kaonp_Q2_2d_zPt_mc[z]) sum_q2 += val;
+        double mean_q2 = sum_q2 / vec_kaonp_Q2_2d_zPt_mc[z].size();
         
-        const double z0  = 0.4;
-        const double Pt0 = 0.5;
-        const double cz  = 0.8;
-        const double cPt = 0.5;
-        double A_UL_sin_inject_dep = A_UL_sin_inject * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        double sum_AUL = 0.0;
+        for (double val : vec_AUL_sinPhi_inj_zPt[z]) sum_AUL += val;
+        double mean_AUL = sum_AUL / vec_AUL_sinPhi_inj_zPt[z].size();
+        double A_UL_sin_inject_dep = mean_AUL;
         // Get AUL and error from vectors
         double aul_sin = AUL_sin_2d_zPt_mc[z]; 
         double aul_sin_err = AUL_sin_err_2d_zPt_mc[z];
@@ -2819,11 +2940,10 @@ void rgc_new_mc_analysis(const char* period) {
         for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
         double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
         
-        const double z0  = 0.4;
-        const double Pt0 = 0.5;
-        const double cz  = 0.8;
-        const double cPt = 0.5;
-        double A_UL_2sin_inject_dep = A_UL_2sin_inject * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        double sum_AUL = 0.0;
+        for (double val : vec_AUL_sin2Phi_inj_zPt[z]) sum_AUL += val;
+        double mean_AUL = sum_AUL / vec_AUL_sin2Phi_inj_zPt[z].size();
+        double A_UL_2sin_inject_dep = mean_AUL;
         // Get AUL2 and error from vectors
         double aul_sin = AUL_2sin_2d_zPt_mc[z];
         double aul_sin_err = AUL_2sin_err_2d_zPt_mc[z];
@@ -3024,11 +3144,10 @@ void rgc_new_mc_analysis(const char* period) {
         for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
         double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
         
-        const double z0  = 0.4;
-        const double Pt0 = 0.5;
-        const double cz  = 0.8;
-        const double cPt = 0.5;
-        double A_LL_0_inject_dep    = A_LL_0_inject    * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        double sum_ALL = 0.0;
+        for (double val : vec_ALL_inj_zPt[z]) sum_ALL += val;
+        double mean_ALL = sum_ALL / vec_ALL_inj_zPt[z].size();
+        double A_LL_0_inject_dep    = mean_ALL;
         //cout << "bin: " << z << ", mean_z: " << mean_z2 << ", mean_pt: " << mean_pt << ", A_LL_0_inject_dep: " << A_LL_0_inject_dep << endl;
         double all_0 = ALL_0_2d_zPt_mc[z];
         double all_0_err = ALL_0_err_2d_zPt_mc[z];
@@ -3226,11 +3345,10 @@ void rgc_new_mc_analysis(const char* period) {
         for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
         double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
         
-        const double z0  = 0.4;
-        const double Pt0 = 0.5;
-        const double cz  = 0.8;
-        const double cPt = 0.5;
-        double A_LL_cos_inject_dep  = A_LL_cos_inject  * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        double sum_ALL = 0.0;
+        for (double val : vec_ALL_cosPhi_inj_zPt[z]) sum_ALL += val;
+        double mean_ALL = sum_ALL / vec_ALL_cosPhi_inj_zPt[z].size();
+        double A_LL_cos_inject_dep  = mean_ALL;
         //cout << "bin: " << z << ", mean_z: " << mean_z2 << ", mean_pt: " << mean_pt << ", A_inject_dep: " << A_LL_cos_inject_dep << endl;
         // Get ALL_cos and error from vectors
         double all_cos = ALL_cos_2d_zPt_mc[z];
@@ -3429,11 +3547,10 @@ void rgc_new_mc_analysis(const char* period) {
         for (double val : vec_kaonp_z_2d_zPt_mc[z]) sum_z2 += val;
         double mean_z2 = sum_z2 / vec_kaonp_z_2d_zPt_mc[z].size();
         
-        const double z0  = 0.4;
-        const double Pt0 = 0.5;
-        const double cz  = 0.8;
-        const double cPt = 0.5;
-        double A_LU_sin_inject_dep  = A_LU_sin_inject  * (1.0 + cz  * (mean_z2 - z0)) * (1.0 + cPt * (mean_pt - Pt0));
+        double sum_ALU = 0.0;
+        for (double val : vec_ALU_sinPhi_inj_zPt[z]) sum_ALU += val;
+        double mean_ALU = sum_ALU / vec_ALU_sinPhi_inj_zPt[z].size();
+        double A_LU_sin_inject_dep  = mean_ALU;
         // Get ALU_sin and error from vectors
         double alu_sin = ALU_sin_2d_zPt_mc[z];
         double alu_sin_err = ALU_sin_err_2d_zPt_mc[z];
@@ -3520,23 +3637,23 @@ void rgc_new_mc_analysis(const char* period) {
         double mean_eps = sum_eps / vec_kaonp_eps_2d_zPt[iz].size();
 
         //
-        const double z0   = 0.44;  // old 0.4
-        const double Pt0  = 0.39;  // old 0.5
-        const double xB0  = 0.26; // old 0.3
-        const double Q20  = 2.77;  // old 4.0
+        double sum_ALU_sin, sum_ALL_cos, sum_ALL, sum_AUL_sin, sum_AUL_sin2;
+        for (double val : vec_ALL_inj_zPt[iz]) sum_ALL += val;
+        double mean_ALL = sum_ALL / vec_ALL_inj_zPt[iz].size();
+        for (double val : vec_ALL_cosPhi_inj_zPt[iz]) sum_ALL_cos += val;
+        double mean_ALL_cos = sum_ALL_cos / vec_ALL_cosPhi_inj_zPt[iz].size();
+        for (double val : vec_ALU_sinPhi_inj_zPt[iz]) sum_ALU_sin += val;
+        double mean_ALU_sin = sum_ALU_sin / vec_ALU_sinPhi_inj_zPt[iz].size();
+        for (double val : vec_AUL_sinPhi_inj_zPt[iz]) sum_AUL_sin += val;
+        double mean_AUL_sin = sum_AUL_sin / vec_AUL_sinPhi_inj_zPt[iz].size();
+        for (double val : vec_AUL_sin2Phi_inj_zPt[iz]) sum_AUL_sin2 += val;
+        double mean_AUL_sin2 = sum_AUL_sin2 / vec_AUL_sin2Phi_inj_zPt[iz].size();
 
-        const double cz   = 0.45;
-        const double cPt  = 0.35;
-        const double cxB  = 0.25;
-        const double cQ2  = 0.025;   // 1/GeV^2
-
-        double kin_dep = (1.0 + cz  * (mean_z - z0)) * (1.0 + cPt * (mean_Pt - Pt0)) * (1.0 + cxB * (mean_xB  - xB0)) * (1.0 + cQ2 * (mean_Q2  - Q20));
-
-        double A_UL_sin_inject_dep  = A_UL_sin_inject  * kin_dep;
-        double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_dep;
-        double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
-        double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
-        double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+        double A_UL_sin_inject_dep  = mean_AUL_sin;
+        double A_UL_2sin_inject_dep = mean_AUL_sin2;
+        double A_LL_0_inject_dep    = mean_ALL;
+        double A_LL_cos_inject_dep  = mean_ALL_cos;
+        double A_LU_sin_inject_dep  = mean_ALU_sin;
         //
         cout << "iz: " << iz << " AUL_sinPhi_inj_bias = " << AUL_sin_2d_zPt_mc[iz] - A_UL_sin_inject_dep << "+/-" << AUL_sin_err_2d_zPt_mc[iz]
         << " AUL_sin2Phi_inj_bias = " << AUL_2sin_2d_zPt_mc[iz] - A_UL_2sin_inject_dep << "+/-" << AUL_2sin_err_2d_zPt_mc[iz]

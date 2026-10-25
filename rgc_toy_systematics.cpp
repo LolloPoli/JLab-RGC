@@ -648,8 +648,8 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 200;
-    for (int s = 0; s < toy_step; s++){
+    int toy_step = 500;
+    for (int s = 300; s < toy_step; s++){
         TString csv_filename_zPt_test = Form("toy_model/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
         TString csv_filename_xQ2_test = Form("toy_model/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());
@@ -1176,9 +1176,20 @@ void rgc_toy_systematics(const char* period) {
         double PbPt = 0.71;
         double kin_dep_max = 1.68;
 
-        double f_max_inject = 1.0 + dilution*0.85*kin_dep_max*(std::abs(A_UL_sin_inject)+std::abs(A_UL_2sin_inject))
-                                + dilution*0.85*beam_pol*kin_dep_max*(std::abs(A_LL_0_inject)+std::abs(A_LL_cos_inject))
-                                + beam_pol*kin_dep_max*(std::abs(A_LU_sin_inject));
+        const double kin_UL_sin_max  = 2.10;
+        const double kin_UL_2sin_max = 1.85;
+        const double kin_LL_0_max    = 1.50;
+        const double kin_LL_cos_max  = 1.90;
+        const double kin_LU_sin_max  = 2.10;
+        const double BA_max = 1.0;
+        const double CA_max = 1.0;
+        const double VA_max = 1.95;
+        const double WA_max = 0.72;
+
+
+        double f_max_inject = 1.0 + dilution*0.85*(std::abs(A_UL_sin_inject)*kin_UL_sin_max*VA_max + std::abs(A_UL_2sin_inject)*kin_UL_2sin_max*BA_max)
+                                + dilution*0.85*beam_pol*(std::abs(A_LL_0_inject)*kin_LL_0_max*CA_max + std::abs(A_LL_cos_inject)*kin_LL_cos_max*WA_max)
+                                + beam_pol*(std::abs(A_LU_sin_inject)*kin_LU_sin_max*WA_max);
 
         TRandom3 rng(12345 + s);
         // MC
@@ -1203,11 +1214,11 @@ void rgc_toy_systematics(const char* period) {
 
             // ========== TRY TO IMPLEMENT THE INJECTION OF KINEMATICS DEPENDENT ASYMMETRIES ==========
 
-            const double z0   = 0.44;  // old 0.4
-            const double Pt0  = 0.39;  // old 0.5
-            const double xB0  = 0.26; // old 0.3
-            const double Q20  = 2.77;  // old 4.0
-
+            const double z0   = 0.44;  
+            const double Pt0  = 0.39;  
+            const double xB0  = 0.26; 
+            const double Q20  = 2.77;  
+            /*
             const double cz   = 0.45;
             const double cPt  = 0.35;
             const double cxB  = 0.25;
@@ -1221,8 +1232,45 @@ void rgc_toy_systematics(const char* period) {
             double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
             double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
             double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+            */
 
-            //if (index_zPt == 1) std::cout << "kin_dep = " << kin_dep  << "   ALL injected = " << A_LL_0_inject_dep << std::endl; 
+            // NEW TMD DEPENDECE
+
+            // Reconstructed MC kinematics
+            const double z  = kaonp_z_mc;
+            const double Pt = kaonp_PhT_mc;
+            const double xB = kaonp_xB_mc;
+            const double Q2 = kaonp_Q2_mc;
+
+            // Kinematic variations
+            const double dz  = z  - z0;
+            const double dPt = Pt - Pt0;
+            const double dxB = xB - xB0;
+
+            // Twist-3 suppression relative to the reference point
+            const double twist3_Q = std::sqrt(Q20 / Q2);
+            
+            // Mild transverse-momentum dependence
+            const double fPt_linear = 1.0 + 0.25 * dPt;
+            // Stronger, quadratic transverse-momentum dependence
+            const double fPt_quadratic = 1.0 + 0.35 * (Pt * Pt - Pt0 * Pt0);
+
+            // UL sin(phi): twist-3
+            const double kin_UL_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+            // UL sin(2phi): leading twist, stronger Pt dependence
+            const double kin_UL_2sin = (1.0 + 0.30 * dz) * fPt_quadratic * (1.0 + 0.20 * dxB);
+            // LL constant: leading twist, stronger xB dependence
+            const double kin_LL_0 = (1.0 + 0.80 * dxB) * (1.0 + 0.15 * dz);
+            // LL cos(phi): twist-3
+            const double kin_LL_cos = (1.0 + 0.30 * dxB) * fPt_linear * twist3_Q;
+            // LU sin(phi): twist-3
+            const double kin_LU_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+
+            double A_UL_sin_inject_dep = A_UL_sin_inject * kin_UL_sin;
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_UL_2sin;
+            double A_LL_0_inject_dep = A_LL_0_inject * kin_LL_0;
+            double A_LL_cos_inject_dep = A_LL_cos_inject * kin_LL_cos;
+            double A_LU_sin_inject_dep = A_LU_sin_inject * kin_LU_sin;
 
             // ========================================================================================
 
@@ -1310,7 +1358,7 @@ void rgc_toy_systematics(const char* period) {
             const double Pt0  = 0.39;  // old 0.5
             const double xB0  = 0.26; // old 0.3
             const double Q20  = 2.77;  // old 4.0
-
+            /*
             const double cz   = 0.45;
             const double cPt  = 0.35;
             const double cxB  = 0.25;
@@ -1323,7 +1371,46 @@ void rgc_toy_systematics(const char* period) {
             double A_LL_0_inject_dep    = A_LL_0_inject    * kin_dep;
             double A_LL_cos_inject_dep  = A_LL_cos_inject  * kin_dep;
             double A_LU_sin_inject_dep  = A_LU_sin_inject  * kin_dep;
+            */
 
+            // NEW TMD DEPENDECE
+
+            // Reconstructed MC kinematics
+            const double z  = kaonp_z_recoMC;
+            const double Pt = kaonp_Pt_recoMC;
+            const double xB = kaonp_xB_recoMC;
+            const double Q2 = kaonp_Q2_recoMC;
+
+            // Kinematic variations
+            const double dz  = z  - z0;
+            const double dPt = Pt - Pt0;
+            const double dxB = xB - xB0;
+
+            // Twist-3 suppression relative to the reference point
+            const double twist3_Q = std::sqrt(Q20 / Q2);
+            
+            // Mild transverse-momentum dependence
+            const double fPt_linear = 1.0 + 0.25 * dPt;
+            // Stronger, quadratic transverse-momentum dependence
+            const double fPt_quadratic = 1.0 + 0.35 * (Pt * Pt - Pt0 * Pt0);
+
+            // UL sin(phi): twist-3
+            const double kin_UL_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+            // UL sin(2phi): leading twist, stronger Pt dependence
+            const double kin_UL_2sin = (1.0 + 0.30 * dz) * fPt_quadratic * (1.0 + 0.20 * dxB);
+            // LL constant: leading twist, stronger xB dependence
+            const double kin_LL_0 = (1.0 + 0.80 * dxB) * (1.0 + 0.15 * dz);
+            // LL cos(phi): twist-3
+            const double kin_LL_cos = (1.0 + 0.30 * dxB) * fPt_linear * twist3_Q;
+            // LU sin(phi): twist-3
+            const double kin_LU_sin = (1.0 + 0.30 * dz) * fPt_linear * twist3_Q;
+
+            double A_UL_sin_inject_dep = A_UL_sin_inject * kin_UL_sin;
+            double A_UL_2sin_inject_dep = A_UL_2sin_inject * kin_UL_2sin;
+            double A_LL_0_inject_dep = A_LL_0_inject * kin_LL_0;
+            double A_LL_cos_inject_dep = A_LL_cos_inject * kin_LL_cos;
+            double A_LU_sin_inject_dep = A_LU_sin_inject * kin_LU_sin;
+            
             // ========================================================================================
 
             double eps = kaonp_epsilon_recoMC, y = kaonp_y_recoMC;
