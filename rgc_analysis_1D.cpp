@@ -54,15 +54,15 @@ double getDilutionFactor(const char* period, int binning, int bin){
     std::string filename;
     if (strcmp(period, "sum22") == 0) {
         p = 0;
-        filename = "DF_Kplus_summer22.csv";
+        filename = "dilution_factor/DF_Kplus_summer22.csv";
     }
     else if (strcmp(period, "fall22") == 0) {
         p = 1;
-        filename = "DF_Kplus_fall22.csv";
+        filename = "dilution_factor/DF_Kplus_fall22.csv";
     }
     else if (strcmp(period, "spring23") == 0) {
         p = 2;
-        filename = "DF_Kplus_spring23.csv";
+        filename = "dilution_factor/DF_Kplus_spring23.csv";
     }
     else {
         throw std::runtime_error("Unknown period: " + std::string(period));
