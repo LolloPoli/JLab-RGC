@@ -10,6 +10,9 @@ import os
 
 include_spring23 = True
 
+# Mostra le modulazioni UU se i CSV contengono valori ed errori.
+include_AUU = True
+
 
 # cartella output
 outdir = "overlayed_asymmetries"
@@ -59,6 +62,39 @@ asymmetries = [
 ]
 
 
+if include_AUU:
+    asymmetries += [
+        ("AUU_cosPhi", "AUU_cosPhi_err"),
+        ("AUU_cos2Phi", "AUU_cos2Phi_err"),
+    ]
+
+# Verifica le colonne prima di creare i grafici.
+input_tables = [
+    ("Summer22 zPt", sum22),
+    ("Fall22 zPt", fall22),
+    ("Summer22 xQ2", sum22_xB),
+    ("Fall22 xQ2", fall22_xB),
+]
+if include_spring23:
+    input_tables += [
+        ("Spring23 zPt", spring23),
+        ("Spring23 xQ2", spring23_xB),
+    ]
+
+for table_name, table in input_tables:
+    table.columns = table.columns.str.strip()
+    required = {col for pair in asymmetries for col in pair}
+    required.update(("bin_zPt", "mean_z") if table_name.endswith("zPt")
+                    else ("bin_xQ2", "mean_xB"))
+    missing = sorted(required - set(table.columns))
+    if missing:
+        raise ValueError(
+            f"{table_name}: colonne mancanti: {', '.join(missing)}. "
+            "Se mancano le colonne AUU, esportale dal fit aggiornato oppure "
+            "imposta include_AUU = False."
+        )
+
+
 titles_asymmetries = [
     r"$0.0 < P_{hT} < 0.25 \ GeV$",
     r"$0.25 < P_{hT} < 0.5 \ GeV$",
@@ -72,7 +108,9 @@ asym_labels = {
     "AUL_sin2Phi": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
     "ALL": r"$F_{LL}/F_{UU}$",
     "ALL_cosPhi": r"$F_{LL}^{\cos\phi}/F_{UU}$",
-    "ALU_sinPhi": r"$F_{LU}^{\sin\phi}/F_{UU}$"
+    "ALU_sinPhi": r"$F_{LU}^{\sin\phi}/F_{UU}$",
+    "AUU_cosPhi": r"$F_{UU}^{\cos\phi}/F_{UU}$",
+    "AUU_cos2Phi": r"$F_{UU}^{\cos 2\phi}/F_{UU}$"
 }
 
 
@@ -187,7 +225,9 @@ for asym, err in asymmetries:
         # Y limits
         # ====================================================
 
-        if asym == "ALU_sinPhi":
+        if asym.startswith("AUU_"):
+            ax.margins(y=0.15)
+        elif asym == "ALU_sinPhi":
             ax.set_ylim(-0.2, 0.2)
 
         elif asym == "ALL":
@@ -379,7 +419,9 @@ for asym, err in asymmetries:
 
 
     # stessi limiti dei plot precedenti
-    if asym == "ALU_sinPhi":
+    if asym.startswith("AUU_"):
+        ax.margins(y=0.15)
+    elif asym == "ALU_sinPhi":
         ax.set_ylim(-0.2, 0.2)
 
     elif asym == "ALL":
@@ -444,3 +486,92 @@ for asym, err in asymmetries:
 
 
 print("All asymmetry plots created in:", outdir)
+
+# ============================================================
+# Plot xB-Q2 separati per campagna (senza sistematiche)
+# ============================================================
+# Gruppi Q2 e colonna bin_xQ2 forniti dall’utente.
+# I colori sono assegnati agli intervalli di Q2, non alle campagne.
+
+separate_outdir = os.path.join(outdir, "xB_Q2_separate")
+os.makedirs(separate_outdir, exist_ok=True)
+
+XQ2_BIN_COLUMN = "bin_xQ2"
+Q2_BIN_GROUPS = [
+    (range(1, 6), "tab:blue", r"$1 < Q^2 < 3\ \mathrm{GeV}^2$"),
+    (range(6, 11), "tab:purple", r"$3 < Q^2 < 5\ \mathrm{GeV}^2$"),
+    (range(11, 13), "deeppink", r"$5 < Q^2 < 7\ \mathrm{GeV}^2$"),
+    (range(13, 15), "tab:orange", r"$7 < Q^2 < 11\ \mathrm{GeV}^2$"),
+]
+
+campaigns_xq2 = [
+    ("Summer22", sum22_xB, "o"),
+    ("Fall22", fall22_xB, "o"),
+]
+if include_spring23:
+    campaigns_xq2.append(("Spring23", spring23_xB, "o"))
+
+for campaign_label, campaign_df, marker in campaigns_xq2:
+    if XQ2_BIN_COLUMN not in campaign_df.columns:
+        raise KeyError(
+            f"Colonna '{XQ2_BIN_COLUMN}' assente nel CSV {campaign_label}. "
+            f"Colonne disponibili: {list(campaign_df.columns)}"
+        )
+
+    for asym, err in asymmetries:
+        sel = campaign_df.sort_values("mean_xB")
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+        # Solo asimmetria ed errore statistico, colori per gruppo Q2
+        for bins, q2_color, q2_label in Q2_BIN_GROUPS:
+            sel_q2 = sel[sel[XQ2_BIN_COLUMN].isin(bins)]
+            if sel_q2.empty:
+                continue
+
+            ax.errorbar(
+                sel_q2["mean_xB"],
+                sel_q2[asym],
+                yerr=sel_q2[err],
+                fmt=marker,
+                markersize=6,
+                capsize=3,
+                linewidth=1.2,
+                color=q2_color,
+                markerfacecolor="white",
+                zorder=2,
+                label=q2_label,
+            )
+
+        ax.axhline(0, color="black", linestyle="--", linewidth=1, alpha=0.6)
+
+        if asym.startswith("AUU_"):
+            ax.margins(y=0.15)
+        elif asym == "ALU_sinPhi":
+            ax.set_ylim(-0.2, 0.2)
+        elif asym == "ALL":
+            ax.set_ylim(-0.1, 0.8)
+        elif asym == "ALL_cosPhi":
+            ax.set_ylim(-0.6, 0.6)
+        elif asym == "AUL_sin2Phi":
+            ax.set_ylim(-0.4, 0.5)
+        else:
+            ax.set_ylim(-0.3, 0.3)
+
+        ax.set_xlabel(r"$x_B$", fontsize=13)
+        ax.set_ylabel(asym_labels[asym], fontsize=13)
+        ax.set_title(
+            rf"$K^+$ NH$_3$ Run Group C — {campaign_label}", fontsize=14
+        )
+        ax.tick_params(direction="in", top=True, right=True, length=5)
+        for spine in ax.spines.values():
+            spine.set_linewidth(1.2)
+        ax.grid(alpha=0.25, linestyle=":")
+        ax.legend(loc="best")
+        plt.tight_layout()
+        output_file = os.path.join(
+            separate_outdir, f"{asym}_{campaign_label.lower()}_xB_Q2.png"
+        )
+        plt.savefig(output_file, dpi=300, bbox_inches="tight")
+        plt.close()
+
+print("Separate xB-Q2 plots created in:", separate_outdir)

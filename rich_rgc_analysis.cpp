@@ -499,6 +499,9 @@ void rich_rgc_analysis() {
     TH2D kp_ThetaVsPhi_h ("_ThetaVsPhi_h", "Correlation Theta vs #Phi_{h}  |  K+  | with EventBuilder + RICH ; #Phi_{h} [Rad]; Theta [Rad]", 400, -TMath::Pi(), TMath::Pi(), 400, 0.1, 0.4);
     TH2D kp_ThetaVsPhi_Lab ("_ThetaVsPhi_Lab", "Correlation #theta vs #Phi_{Lab} | K+ | with EventBuilder + RICH ; #Phi_{Lab} [Rad]; #theta [Rad]", 400, -TMath::Pi(), TMath::Pi(), 400, 0.05, 0.4);
     //
+    TH2D kp_rich_aerogel_xy_4 ("rich_aerogel_sect4_xy", "Aerogel RICH 4th sector, xy plane | t-1 & K+; x [cm]; y [cm]", 300, -230, -70, 300, -100, 100);
+    TH2D kp_rich_aerogel_xy_1 ("rich_aerogel_sect1_xy", "Aerogel RICH 1th sector, xy plane | t-1 & K+; x [cm]; y [cm]", 300, 70, 230, 300, -100, 100);
+    //
     TH2D empty_canvas ("____________________", "empty space;", 1, 0, 1, 1, 0, 1);
     TH1D empty_canvas_grich ("_________ good RICH ___________", "empty space;", 1, 0, 1);
     TH1D kp_evnt_pid_grich ("_evnt_PID_good_rich", "EventBuilder PID | K+ for RICH; PID", 300, 0, 2300);
@@ -621,7 +624,7 @@ void rich_rgc_analysis() {
             double y_limit = m*kaonp_rich_RL + q;
             double x_limit = (kaonp_rich_RQ - q)/m; // kaonp_rich_RQ < y_limit && kaonp_rich_RL > x_limit
             //if(kaonp_rich_RQ >= y_limit) continue;
-            if(kaonp_rich_nTot == 0) continue;
+            //if(kaonp_rich_nTot == 0) continue;
             if(passRichSelection(kaonp_rich_RL,kaonp_rich_RQ,kaonp_rich_nTot,kaonp_rich_pid,kaonp_track_pid,kaonp_rich_chi2,kaonp_Ph)){
                 kp_evnt_chi2_brich.Fill(kaonp_chi2pid);
                 kp_rich_chi2_brich.Fill(kaonp_rich_chi2);
@@ -704,6 +707,14 @@ void rich_rgc_analysis() {
         }
         //
         if(std::abs(kaonp_chi2pid) < 5 && KinematicPID_Vertex(kaonp_vz, torus, 321)){
+            kp_rich_aerogel_xy_4.Fill(kaonp_rich_tr4_x, kaonp_rich_tr4_y);
+            if(kaonp_rich_pid != 0){
+                kp_rich_aerogel_xy_4.Fill(kaonp_rich_tr2_x, kaonp_rich_tr2_y);
+                kp_rich_aerogel_xy_4.Fill(kaonp_rich_tr3_x, kaonp_rich_tr3_y);
+                kp_rich_aerogel_xy_1.Fill(kaonp_rich_tr2_x, kaonp_rich_tr2_y);
+                kp_rich_aerogel_xy_1.Fill(kaonp_rich_tr3_x, kaonp_rich_tr3_y);
+                kp_rich_aerogel_xy_1.Fill(kaonp_rich_tr4_x, kaonp_rich_tr4_y);
+            }
             if(kaonp_track_pid == 321) kp_Mx_tof.Fill(kaonp_Mx);
             if(kaonp_rich_pid == 321) kp_Mx_rich.Fill(kaonp_Mx);
             // passRichSelection(kaonp_rich_RL,kaonp_rich_RQ,kaonp_rich_nTot,kaonp_rich_pid,kaonp_track_pid,kaonp_rich_chi2,kaonp_Ph)
@@ -796,6 +807,7 @@ void rich_rgc_analysis() {
                 kp_rich_aerogel_xz.Fill(kaonp_rich_tr2_x, kaonp_rich_tr2_z);
                 kp_rich_aerogel_xz.Fill(kaonp_rich_tr3_x, kaonp_rich_tr3_z);
                 //kp_rich_aerogel_xz.Fill(kaonp_rich_tr4_x, kaonp_rich_tr4_z);
+
             }
         }
     }
@@ -834,7 +846,7 @@ void rich_rgc_analysis() {
         &kp_Q2VsXb, &kp_Q2VsXf, &kp_Q2VsMom, &kp_Q2VsPhT, &kp_Q2VsZ, &kp_Q2VsY, &kp_Q2VsEta, &kp_Q2VsPhi_h,
         &kp_PhTvsZ, &kp_PhTvsXb, &kp_PhTvsEta, &kp_PhTvsPhi_h,
         &kp_zVsXb, &kp_zVsXf, &kp_zVsEta, &kp_zVsPhi_h,
-        &kp_xBvsY, &kp_ThetaVsPhi_h, &kp_ThetaVsPhi_Lab, &empty_canvas,
+        &kp_xBvsY, &kp_ThetaVsPhi_h, &kp_ThetaVsPhi_Lab, &kp_rich_aerogel_xy_4, &kp_rich_aerogel_xy_1,&empty_canvas,
         &kp_MomVsMass_Rich,
         &kp_rich_pmt_xy, &kp_rich_aerogel_xy, &kp_rich_aerogel_l1_xy, &kp_rich_aerogel_l2_xy, &kp_rich_aerogel_xp, &kp_rich_aerogel_yp, &kp_rich_aerogel_xz
     };

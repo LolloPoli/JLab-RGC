@@ -9,8 +9,8 @@ import os
 # ------------------------------------------------------------------
 period = "summer22"          # scegli se summer22 o fall22
 binning = "zPt"              # "zPt" oppure "xQ2"
-toy_dir = "toy_model"
-outdir = "TOY_diagnostics"
+toy_dir = "toy_model_noFermi"
+outdir = "TOY_diagnostics_noFermi"
 
 if binning == "zPt":
     bin_column = "bin_zPt"
@@ -216,15 +216,23 @@ print(f"\nPlot diagnostici salvati in: {outdir}/")
 # SISTEMATICA TOTALE FINALE: somma in quadratura delle 4 componenti
 # "final" (gia' passate per il test di significativita' >= 2 sigma)
 # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# SISTEMATICA TOTALE E PROPAGAZIONE DELL'ERRORE
+# ------------------------------------------------------------------
 final_cols = [f"{c}_final" for c in SYS_COMPONENTS]
 sem_cols = [f"{c}_sem" for c in SYS_COMPONENTS]
 
+# Sistematica totale (invariata)
 summary["Total_sys_final"] = np.sqrt((summary[final_cols] ** 2).sum(axis=1))
-# propagazione approssimata dell'incertezza sulla stima stessa del totale
-# (somma in quadratura dei SEM delle componenti che contribuiscono davvero)
-summary["Total_sys_final_err"] = np.sqrt((summary[sem_cols].fillna(0) ** 2).sum(axis=1))
+# Errore sulla sistematica totale (propagazione corretta)
+sys_values = summary[final_cols].to_numpy(dtype=float)
+sem_values = summary[sem_cols].to_numpy(dtype=float)
+sys_tot = summary["Total_sys_final"].to_numpy(dtype=float)
 
-summary.to_csv(summary_path, index=False)  # ri-salva con le colonne totali incluse
+weights = np.divide(sys_values,sys_tot[:, None],out=np.zeros_like(sys_values),where=sys_tot[:, None] > 0)
+
+summary["Total_sys_final_err"] = np.sqrt(np.sum((weights * sem_values) ** 2, axis=1))
+summary.to_csv(summary_path, index=False)
 
 # ------------------------------------------------------------------
 # REPORT FINALE: tabella leggibile, una riga per (modulation, bin_zPt),

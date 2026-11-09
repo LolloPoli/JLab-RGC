@@ -123,6 +123,8 @@ double AUL_loglike_withLL(const double* Aul,
                           const vector<double>& helicity,    // beam helicity (+1 / -1)
                           const vector<double>& sintheta,
                           const double dilution,
+                          const double mc_mean_cos1,
+                          const double mc_mean_cos2,
                           bool use_spinstate_for_helicity = true,
                           const char* target = "NH3",
                           const char* campaign = "fall22")
@@ -190,6 +192,10 @@ double AUL_loglike_withLL(const double* Aul,
         }
     } 
 
+    // --- AUU norm ---
+    const double normUU = 1.0 + A_UU_cos1 * mc_mean_cos1 + A_UU_cos2 * mc_mean_cos2;
+    if (!std::isfinite(normUU) || normUU <= 0.0) return 1e12;
+    double sumWeights = 0.0;
 
     // -------- Event loop --------
     for (size_t i = 0; i < phi_h.size(); ++i) {
@@ -230,11 +236,12 @@ double AUL_loglike_withLL(const double* Aul,
         else if (helicity[i] > 0 && spinstate[i] < 0) w = w_pm;
         else if (helicity[i] < 0 && spinstate[i] > 0) w = w_mp;
         else if (helicity[i] < 0 && spinstate[i] < 0) w = w_mm;
-
+        sumWeights += w;
         logLike += w * log(arg);
     }
 
-    return -logLike;
+    //return -logLike;
+    return sumWeights * std::log(normUU) - logLike;
 }
 
 
@@ -390,6 +397,38 @@ int getBinIndex_xQ2(double xB, double Q2){
     return -1;
 }
 
+
+int getBinIndex_xQ2dep(double xB, double Q2){
+    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.4},{0.4,0.5},{0.5, 0.60},{0.60, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,2}, {2,3}},                  
+        {{1,2}, {2,3}, {3,4}},           
+        {{1,2.5}, {2.5,4}, {4,5.5}},     
+        {{1.5,3}, {3,4.5}, {4.5,6.5}},       
+        {{2,4}, {4,6}, {6,8}},         
+        {{2.5,6}, {6,10}},                
+        {{4,7},{7,11}}                         
+    };
+    int binIndex = 1;
+    for (int ix = 0; ix < 5; ix++){
+        if (xB >= bin_xB[ix][0] && xB < bin_xB[ix][1]){
+            for (size_t iq = 0; iq < binning_Q2_for_xB[ix].size(); iq++){
+                double Q2min = binning_Q2_for_xB[ix][iq][0];
+                double Q2max = binning_Q2_for_xB[ix][iq][1];
+                if (Q2 >= Q2min && Q2 < Q2max){
+                    return binIndex;
+                }
+                binIndex++;
+            }
+            return -1;
+        } else {
+            binIndex += binning_Q2_for_xB[ix].size();
+        }
+    }
+    return -1;
+}
+
+
 int getBinIndex_zPt(double z, double Pt){
     double bin_Pt[][2] = {{0, 0.25}, {0.25, 0.5}, {0.5, 0.8}, {0.8, 1.4}};
     vector<vector<array<double,2>>> binning_z_for_Pt = {
@@ -495,7 +534,88 @@ PhiRatioFitResult FitPhiRatio(
     return res;
 }
 
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <stdexcept>
+#include <cmath>
 
+struct AUUMoments {
+    std::vector<double> mean_cos1;
+    std::vector<double> mean_cos2;
+};
+
+AUUMoments load_AUU_moments(const std::string& filename, int nbins)
+{
+    if (nbins <= 0)
+        throw std::runtime_error("Numero di bin non valido");
+
+    std::ifstream file(filename);
+    if (!file)
+        throw std::runtime_error("Impossibile aprire: " + filename);
+
+    AUUMoments result{
+        std::vector<double>(nbins, 0.0),
+        std::vector<double>(nbins, 0.0)
+    };
+
+    std::vector<bool> found(nbins, false);
+    std::string line;
+
+    // Salta l'intestazione.
+    if (!std::getline(file, line))
+        throw std::runtime_error("CSV vuoto: " + filename);
+
+    int line_number = 1;
+
+    while (std::getline(file, line)) {
+        ++line_number;
+
+        if (line.find_first_not_of(" \t\r") == std::string::npos)
+            continue;
+
+        std::replace(line.begin(), line.end(), ',', ' ');
+        std::istringstream row(line);
+
+        int bin;
+        double M0, M1, M2, mean1, mean2;
+
+        if (!(row >> bin >> M0 >> M1 >> M2 >> mean1 >> mean2))
+            throw std::runtime_error(
+                "Riga CSV non valida: " + filename +
+                ", riga " + std::to_string(line_number));
+
+        if (bin < 1 || bin > nbins)
+            throw std::runtime_error(
+                "Bin fuori intervallo: " + std::to_string(bin));
+
+        const int index = bin - 1;
+
+        if (found[index])
+            throw std::runtime_error(
+                "Bin duplicato: " + std::to_string(bin));
+
+        if (!std::isfinite(M0) || M0 <= 0.0 ||
+            !std::isfinite(M1) || !std::isfinite(M2) ||
+            !std::isfinite(mean1) || !std::isfinite(mean2))
+            throw std::runtime_error(
+                "Momenti MC non validi nel bin " + std::to_string(bin));
+
+        result.mean_cos1[index] = mean1;
+        result.mean_cos2[index] = mean2;
+        found[index] = true;
+    }
+
+    for (int index = 0; index < nbins; ++index) {
+        if (!found[index])
+            throw std::runtime_error(
+                "Bin mancante nel CSV: " + std::to_string(index + 1));
+    }
+
+    return result;
+}
 
 
 void rgc_analysis_1D(const char* period, const char* target) {
@@ -554,6 +674,21 @@ void rgc_analysis_1D(const char* period, const char* target) {
         {{0.2, 0.5}, {0.5, 0.6}, {0.6, 0.7}, {0.7, 1.0}}
     };
 
+    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.4},{0.4,0.5},{0.5, 0.60},{0.60, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,2}, {2,3}},                  
+        {{1,2}, {2,3}, {3,4}},           
+        {{1,2.5}, {2.5,4}, {4,5.5}},     
+        {{1.5,3}, {3,4.5}, {4.5,6.5}},       
+        {{2,4}, {4,6}, {6,8}},         
+        {{2.5,6}, {6,10}},                
+        {{4,7},{7,11}}                         
+    };
+    
+
+
+
+
     string inputDir = string(period) + "_" + string(target) + "_data";
     //string inputDir = "fall22_NH3_data";
     //vector<string> rootFiles = {"fall22_NH3_data_new", "fall22_NH3_data"};
@@ -597,9 +732,9 @@ void rgc_analysis_1D(const char* period, const char* target) {
     TString csv_filename = Form("RECO_CSV/output_RGC_%s_asymmetries_%s.csv", target, period);
     TString csv_filename_xQ2 = Form("RECO_CSV/output_RGC_%s_asymmetries_%s_xQ2.csv", target, period);
     std::ofstream csvFile(csv_filename.Data());
-    csvFile << "bin_zPt, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, ALU_sinPhi, ALU_sinPhi_err\n";
+    csvFile << "bin_zPt, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, AUU_cosPhi, AUU_cosPhi_err, AUU_cos2Phi, AUU_cos2Phi_err, ALU_sinPhi, ALU_sinPhi_err, cov_ALU_AUL_sinPhi, cov_ALL_cosPhi_AUL_sinPhi, cov_AUU_cosPhi_ALL_cosPhi, cov_AUU_cosPhi_ALU_sinPhi, cov_AUU_cosPhi_AUL_sinPhi, cov_ALL_cosPhi_ALU_sinPhi, cov_AUU_cos2Phi_AUL_sin2Phi\n";
     std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
-    csvFile_xQ2 << "bin_xQ2, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, ALU_sinPhi, ALU_sinPhi_err\n";
+    csvFile_xQ2 << "bin_xQ2, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, AUU_cosPhi, AUU_cosPhi_err, AUU_cos2Phi, AUU_cos2Phi_err, ALU_sinPhi, ALU_sinPhi_err, cov_ALU_AUL_sinPhi, cov_ALL_cosPhi_AUL_sinPhi, cov_AUU_cosPhi_ALL_cosPhi, cov_AUU_cosPhi_ALU_sinPhi, cov_AUU_cosPhi_AUL_sinPhi, cov_ALL_cosPhi_ALU_sinPhi, cov_AUU_cos2Phi_AUL_sin2Phi\n";
 
     TFile outFile(outputFile.Data(), "RECREATE");  // File di output ROOT
     TTree treeKaonP("Kaon+", "");
@@ -916,6 +1051,15 @@ void rgc_analysis_1D(const char* period, const char* target) {
     vector<double> ALU_sin_err_2d(nbin_xQ2);
     vector<double> ALU_sin_2d_zPt(nbin_zPt);
     vector<double> ALU_sin_err_2d_zPt(nbin_zPt);
+    // AUU
+    vector<double> AUU_cos_xQ2(nbin_xQ2);
+    vector<double> AUU_cos_err_xQ2(nbin_xQ2);
+    vector<double> AUU_cos2_xQ2(nbin_xQ2);
+    vector<double> AUU_cos2_err_xQ2(nbin_xQ2);
+    vector<double> AUU_cos_zPt(nbin_zPt);
+    vector<double> AUU_cos_err_zPt(nbin_zPt);
+    vector<double> AUU_cos2_zPt(nbin_zPt);
+    vector<double> AUU_cos2_err_zPt(nbin_zPt);
     //
     vector<vector<double>> AUL_sin_4d(nbin_xQ2, vector<double> (nbin_zPt));
     vector<vector<double>> AUL_sin_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
@@ -1012,7 +1156,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
         double radius = sqrt(kaonp_px*kaonp_px + kaonp_py*kaonp_py);
         //if (radius >= 1.3) continue; // serve?
         //
-        //if(kaonp_Mx < 2 || kaonp_Mx > 2.5) continue;
+        //if(kaonp_Mx < 1) continue;
         if(std::abs(kaonp_chi2pid) < 3){
             kp_Mx_tof.Fill(kaonp_Mx);
             // passRichSelection(kaonp_rich_RL,kaonp_rich_RQ,kaonp_rich_nTot,kaonp_rich_pid,kaonp_track_pid,kaonp_rich_chi2,kaonp_Ph)
@@ -1492,6 +1636,65 @@ void rgc_analysis_1D(const char* period, const char* target) {
     c_bin_xQ2->Write();
 
 
+    //
+
+    TCanvas *c_bin_xQ2_Qdep = new TCanvas("Q2_vs_xB_Bin_2", "Q^{2} vs x_{B} bin", 800, 700);
+
+    c_bin_xQ2_Qdep->SetLogz();
+    kp_Q2VsXb.Draw("COLZ");
+
+    vector<TPolyLine*> rectangles2;
+    vector<TText*> labels2;
+
+    int bin_index2 = 1;
+
+    for (int ix = 0; ix < 7; ++ix) {
+
+        for (size_t iq = 0; iq < binning_Q2_for_xB[ix].size(); ++iq) {
+
+            double Q2min = binning_Q2_for_xB[ix][iq][0];
+            double Q2max = binning_Q2_for_xB[ix][iq][1];
+
+            double xBmin = bin_xB[ix][0];
+            double xBmax = bin_xB[ix][1];
+
+            double Q2[5] = {
+                Q2min, Q2max, Q2max, Q2min, Q2min
+            };
+
+            double xB[5] = {
+                xBmin, xBmin, xBmax, xBmax, xBmin
+            };
+
+            TPolyLine *rect = new TPolyLine(5, xB, Q2);
+            rect->SetLineColor(kBlack);
+            rect->SetLineWidth(2);
+            rect->Draw("same");
+            rectangles2.push_back(rect);
+
+            double Q2_center = 0.5 * (Q2min + Q2max);
+            double xB_center = 0.5 * (xBmin + xBmax);
+
+            TText *label = new TText(
+                xB_center, Q2_center, Form("%d", bin_index2++)
+            );
+
+            label->SetTextAlign(22);
+            label->SetTextSize(0.03);
+            label->SetTextColor(kRed+1);
+            label->Draw("same");
+            labels2.push_back(label);
+        }
+    }
+
+    c_bin_xQ2_Qdep->Update();
+    c_bin_xQ2_Qdep->Write();
+
+
+
+    //
+
+
     for(int i = 0; i < nbin_xQ2; i++) hist_xBvsQ2_binned[i]->Write();
 
 
@@ -1538,7 +1741,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     for(int i = 0; i < nbin_zPt; i++) hist_zvsPt_binned[i]->Write();
 
 
-
+    // DILUTION FACTOR
     for (int i = 0; i < nbin_xQ2; i++) {
         vec_dilution_xQ2[i] = getDilutionFactor(period, 1, i + 1);
     }
@@ -1546,26 +1749,79 @@ void rgc_analysis_1D(const char* period, const char* target) {
         vec_dilution_zPt[i] = getDilutionFactor(period, 2, i + 1);
     }
 
+    // AUU AMPLITUDE
+    const auto mc_AUU_xQ2 = load_AUU_moments(Form("RECO_CSV/table_RGC_MC_%s_AUU_xQ2.csv", period),nbin_xQ2);
+    const auto mc_AUU_zPt = load_AUU_moments(Form("RECO_CSV/table_RGC_MC_%s_AUU_zPt.csv", period),nbin_zPt);
+
+
+    vector<double> cov_ALU_AUL_sinPhi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_ALU_AUL_sinPhi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_ALL_cosPhi_AUL_sinPhi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_ALL_cosPhi_AUL_sinPhi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cosPhi_ALL_cosPhi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cosPhi_ALL_cosPhi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cosPhi_ALU_sinPhi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cosPhi_ALU_sinPhi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cosPhi_AUL_sinPhi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cosPhi_AUL_sinPhi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_ALL_cosPhi_ALU_sinPhi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_ALL_cosPhi_ALU_sinPhi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cos2Phi_AUL_sin2Phi_xQ2(nbin_xQ2,std::numeric_limits<double>::quiet_NaN());
+    vector<double> cov_AUU_cos2Phi_AUL_sin2Phi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
+    
     // ASYMMETRIES xQ2
     for (int x = 0; x < nbin_xQ2; x++){ 
         ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
         //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_kaonp_sintheta_2d[x], false);}, 2);
-        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_y_2d[x],vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_sintheta_2d[x], vec_dilution_xQ2[x], true, target, period);}, 7);
+        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_y_2d[x],vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_sintheta_2d[x], vec_dilution_xQ2[x], mc_AUU_xQ2.mean_cos1[x], mc_AUU_xQ2.mean_cos2[x],true, target, period);}, 7);
         minimizer.SetFunction(MLE);
         minimizer.SetMaxFunctionCalls(50000);
         minimizer.SetMaxIterations(10000);
         minimizer.SetTolerance(0.001);
-        minimizer.SetStrategy(1);
+        //minimizer.SetStrategy(1);
         minimizer.SetLimitedVariable(0, "Aul_sin", 0.00, 0.001, -0.8, 0.8); 
         minimizer.SetLimitedVariable(1, "Aul_2sin", 0.00, 0.001, -0.8, 0.8);
         minimizer.SetLimitedVariable(2, "All", 0.00, 0.001, -0.8, 0.8); 
         minimizer.SetLimitedVariable(3, "All_cos", 0.00, 0.001, -0.8, 0.8);
-        minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.000, -0.8, 0.8);
-        minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.000, -0.8, 0.8);
+        minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.001, -0.8, 0.8);
+        minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.001, -0.8, 0.8);
         minimizer.SetLimitedVariable(6, "Alu", 0.00, 0.001, -0.8, 0.8);
         //minimizer.SetLimitedVariable(7, "Aul_3sin", 0.00, 0.000, -1, 1);
         //minimizer.SetLimitedVariable(8, "All_cos2", 0.00, 0.000, -0.03, 0.03);
-        minimizer.Minimize();
+        //minimizer.Minimize();
+        //minimizer.SetPrintLevel(2);
+        minimizer.SetStrategy(2);
+        minimizer.SetErrorDef(0.5);
+        const bool fit_ok = minimizer.Minimize();
+        const int fit_status = minimizer.Status();
+
+        // Ricalcola la matrice degli errori al minimo.
+        const bool hesse_ok = fit_ok && minimizer.Hesse();
+        const int cov_status = minimizer.CovMatrixStatus();
+        std::cout << "EDM = " << minimizer.Edm()
+          << "  NCalls = " << minimizer.NCalls()
+          << std::endl;
+
+        std::cout
+            << "bin: " << x
+            << " fit status: " << fit_status
+            << " covariance status: " << cov_status
+            << std::endl;
+
+        // Richiediamo una matrice di covarianza accurata.
+        // Se fallisce, fermiamo l'analisi per controllare il bin.
+        if (!fit_ok || fit_status != 0 || !hesse_ok || cov_status != 3) {
+            throw std::runtime_error("Fit o covarianza non affidabile nel bin " + std::to_string(x));
+        }
+
+        cov_ALU_AUL_sinPhi_xQ2[x] = minimizer.CovMatrix(0, 6);
+        cov_ALL_cosPhi_AUL_sinPhi_xQ2[x] = minimizer.CovMatrix(3, 0);
+        cov_AUU_cosPhi_ALL_cosPhi_xQ2[x] =	minimizer.CovMatrix(4, 3);
+        cov_AUU_cosPhi_ALU_sinPhi_xQ2[x] =	minimizer.CovMatrix(4, 6);
+        cov_AUU_cosPhi_AUL_sinPhi_xQ2[x] =	minimizer.CovMatrix(4, 0);
+        cov_ALL_cosPhi_ALU_sinPhi_xQ2[x] =	minimizer.CovMatrix(3, 6);
+        cov_AUU_cos2Phi_AUL_sin2Phi_xQ2[x] = minimizer.CovMatrix(5, 1);
+
         // LSA
         AUL_sin_2d[x] = minimizer.X()[0];
         AUL_sin_err_2d[x] = minimizer.Errors()[0];
@@ -1575,9 +1831,20 @@ void rgc_analysis_1D(const char* period, const char* target) {
         ALL_0_err_2d[x] = minimizer.Errors()[2];
         ALL_cos_2d[x] = minimizer.X()[3];
         ALL_cos_err_2d[x] = minimizer.Errors()[3];
+        AUU_cos_xQ2[x] = minimizer.X()[4];
+        AUU_cos_err_xQ2[x] = minimizer.Errors()[4];
+        AUU_cos2_xQ2[x] = minimizer.X()[5];
+        AUU_cos2_err_xQ2[x] = minimizer.Errors()[5];
         ALU_sin_2d[x] = minimizer.X()[6];
         ALU_sin_err_2d[x] = minimizer.Errors()[6];
-        cout << "bin: " << x <<  "  -->  All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
+        //cout << "bin: " << x <<  "  -->  All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
+        cout << std::setprecision(17)
+        << "err UL = " << minimizer.Errors()[0]
+        << " err LU = " << minimizer.Errors()[6]
+        << " cov = " << minimizer.CovMatrix(0, 6)
+        << " rho = " << minimizer.Correlation(0, 6)
+        << " cov status = " << minimizer.CovMatrixStatus()
+        << endl;
         // TSA
         // mean value
         double sum_sint = 0, sum_eps = 0;
@@ -1609,22 +1876,51 @@ void rgc_analysis_1D(const char* period, const char* target) {
     for (int z = 0; z < nbin_zPt; z++){ 
         ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
         //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_kaonp_sintheta_2d[x], false);}, 2);
-        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_sintheta_2d_zPt[z], vec_dilution_zPt[z], true, target, period);}, 7);
+        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d_zPt[z], vec_kaonp_spin_2d_zPt[z], vec_kaonp_y_2d_zPt[z],vec_kaonp_eps_2d_zPt[z], vec_kaonp_pol_2d_zPt[z], vec_helicity_2d_zPt[z], vec_kaonp_sintheta_2d_zPt[z], vec_dilution_zPt[z], mc_AUU_zPt.mean_cos1[z], mc_AUU_zPt.mean_cos2[z], true, target, period);}, 7);
         minimizer.SetFunction(MLE);
         minimizer.SetMaxFunctionCalls(50000);
         minimizer.SetMaxIterations(10000);
         minimizer.SetTolerance(0.001);
-        minimizer.SetStrategy(1);
+        minimizer.SetStrategy(2);
+        minimizer.SetErrorDef(0.5);
         minimizer.SetLimitedVariable(0, "Aul_sin", 0.00, 0.001, -0.8, 0.8); 
         minimizer.SetLimitedVariable(1, "Aul_2sin", 0.00, 0.001, -0.8, 0.8);
         minimizer.SetLimitedVariable(2, "All", 0.00, 0.001, -0.8, 0.8); 
         minimizer.SetLimitedVariable(3, "All_cos", 0.00, 0.001, -0.8, 0.8);
-        minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.000, -0.8, 0.8);
-        minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.000, -0.8, 0.8);
+        minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.001, -0.8, 0.8);
+        minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.001, -0.8, 0.8);
         minimizer.SetLimitedVariable(6, "Alu", 0.00, 0.001, -0.8, 0.8);
         //minimizer.SetLimitedVariable(7, "Aul_3sin", 0.00, 0.000, -1, 1);
         //minimizer.SetLimitedVariable(8, "All_cos2", 0.00, 0.000, -0.03, 0.03);
-        minimizer.Minimize();
+        //minimizer.Minimize();
+        const bool fit_ok = minimizer.Minimize();
+        const int fit_status = minimizer.Status();
+
+        // Ricalcola la matrice degli errori al minimo.
+        const bool hesse_ok = fit_ok && minimizer.Hesse();
+        const int cov_status = minimizer.CovMatrixStatus();
+
+        std::cout
+            << "bin: " << z
+            << " fit status: " << fit_status
+            << " covariance status: " << cov_status
+            << std::endl;
+
+        // Richiediamo una matrice di covarianza accurata.
+        // Se fallisce, fermiamo l'analisi per controllare il bin.
+        if (!fit_ok || fit_status != 0 || !hesse_ok || cov_status != 3) {
+            throw std::runtime_error("Fit o covarianza non affidabile nel bin " + std::to_string(z));
+        }
+
+        cov_ALU_AUL_sinPhi_zPt[z] = minimizer.CovMatrix(0, 6);
+        cov_ALL_cosPhi_AUL_sinPhi_zPt[z] = minimizer.CovMatrix(3, 0);
+        cov_ALL_cosPhi_AUL_sinPhi_zPt[z] = minimizer.CovMatrix(3, 0);
+        cov_AUU_cosPhi_ALL_cosPhi_zPt[z] =	minimizer.CovMatrix(4, 3);
+        cov_AUU_cosPhi_ALU_sinPhi_zPt[z] =	minimizer.CovMatrix(4, 6);
+        cov_AUU_cosPhi_AUL_sinPhi_zPt[z] =	minimizer.CovMatrix(4, 0);
+        cov_ALL_cosPhi_ALU_sinPhi_zPt[z] =	minimizer.CovMatrix(3, 6);
+        cov_AUU_cos2Phi_AUL_sin2Phi_zPt[z] = minimizer.CovMatrix(5, 1);
+
         // LSA
         AUL_sin_2d_zPt[z] = minimizer.X()[0];
         AUL_sin_err_2d_zPt[z] = minimizer.Errors()[0];
@@ -1634,9 +1930,20 @@ void rgc_analysis_1D(const char* period, const char* target) {
         ALL_0_err_2d_zPt[z] = minimizer.Errors()[2];
         ALL_cos_2d_zPt[z] = minimizer.X()[3];
         ALL_cos_err_2d_zPt[z] = minimizer.Errors()[3];
+        AUU_cos_zPt[z] = minimizer.X()[4];
+        AUU_cos_err_zPt[z] = minimizer.Errors()[4];
+        AUU_cos2_zPt[z] = minimizer.X()[5];
+        AUU_cos2_err_zPt[z] = minimizer.Errors()[5];
         ALU_sin_2d_zPt[z] = minimizer.X()[6];
         ALU_sin_err_2d_zPt[z] = minimizer.Errors()[6];
-        cout << "bin: " << z <<  "  -->  All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
+        //cout << "bin: " << z <<  "  -->  All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
+        cout << std::setprecision(17)
+        << "err UU cos = " << minimizer.Errors()[4]
+        << " err LU sin = " << minimizer.Errors()[6]
+        << " cov = " << minimizer.CovMatrix(4, 6)
+        << " rho = " << minimizer.Correlation(4, 6)
+        << " cov status = " << minimizer.CovMatrixStatus()
+        << endl;
         // TSA
         // mean value
         double sum_sint = 0, sum_eps = 0;
@@ -1661,7 +1968,6 @@ void rgc_analysis_1D(const char* period, const char* target) {
         AUL_gamma_2sin_err_2d_zPt[z] = minimizer.Errors()[1];
     }
     cout << " -------------------------------------------------------------------------------------------------------------------------------------------- " << endl;
-    
 
 
     //
@@ -3156,8 +3462,13 @@ void rgc_analysis_1D(const char* period, const char* target) {
         double mean_Pt = sum_Pt / vec_kaonp_Pt_2d_zPt[i].size();
         for (double valeps : vec_kaonp_eps_2d_zPt[i]) sum_eps += valeps;
         double mean_eps = sum_eps / vec_kaonp_eps_2d_zPt[i].size();
-        csvFile << i+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << " , " << AUL_sin_2d_zPt[i] << " , " << AUL_sin_err_2d_zPt[i] << " , " << AUL_2sin_2d_zPt[i] << " , " << AUL_2sin_err_2d_zPt[i] << " , " <<
-        ALL_0_2d_zPt[i] << " , " << ALL_0_err_2d_zPt[i]  << " , " << ALL_cos_2d_zPt[i]  << " , " << ALL_cos_err_2d_zPt[i]  << " , " << ALU_sin_2d_zPt[i]  << " , " << ALU_sin_err_2d_zPt[i] << endl;
+        csvFile << i+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << " , " << 
+        AUL_sin_2d_zPt[i] << " , " << AUL_sin_err_2d_zPt[i] << " , " << AUL_2sin_2d_zPt[i] << " , " << AUL_2sin_err_2d_zPt[i] << " , " <<
+        ALL_0_2d_zPt[i] << " , " << ALL_0_err_2d_zPt[i]  << " , " << ALL_cos_2d_zPt[i]  << " , " << ALL_cos_err_2d_zPt[i]  << " , " << 
+        AUU_cos_zPt[i] << " , " << AUU_cos_err_zPt[i] << " , " << AUU_cos2_zPt[i] << " , " << AUU_cos2_err_zPt[i] << " , " << 
+        ALU_sin_2d_zPt[i]  << " , " << ALU_sin_err_2d_zPt[i] << " , "  << 
+        std::setprecision(17) << cov_ALU_AUL_sinPhi_zPt[i] << " , " << std::setprecision(17) << cov_ALL_cosPhi_AUL_sinPhi_zPt[i]  << " , " << cov_AUU_cosPhi_ALL_cosPhi_zPt[i] << " , " << 
+        cov_AUU_cosPhi_ALU_sinPhi_zPt[i] << " , " << cov_AUU_cosPhi_AUL_sinPhi_zPt[i] << " , " << cov_ALL_cosPhi_ALU_sinPhi_zPt[i] << " , "  << cov_AUU_cos2Phi_AUL_sin2Phi_zPt[i] << endl;
     }
 
     for (int i = 0; i < nbin_xQ2; i++){
@@ -3172,8 +3483,13 @@ void rgc_analysis_1D(const char* period, const char* target) {
         double mean_Pt = sum_Pt / vec_kaonp_Pt_2d[i].size();
         for (double valeps : vec_kaonp_eps_2d[i]) sum_eps += valeps;
         double mean_eps = sum_eps / vec_kaonp_eps_2d[i].size();
-        csvFile_xQ2 << i+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << " , " << AUL_sin_2d[i] << " , " << AUL_sin_err_2d[i] << " , " << AUL_2sin_2d[i] << " , " << AUL_2sin_err_2d[i] << " , " <<
-        ALL_0_2d[i] << " , " << ALL_0_err_2d[i]  << " , " << ALL_cos_2d[i]  << " , " << ALL_cos_err_2d[i]  << " , " << ALU_sin_2d[i]  << " , " << ALU_sin_err_2d[i] << endl;
+        csvFile_xQ2 << i+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << " , " << AUL_sin_2d[i] << " , " << AUL_sin_err_2d[i] << " , " << 
+        AUL_2sin_2d[i] << " , " << AUL_2sin_err_2d[i] << " , " << ALL_0_2d[i] << " , " << ALL_0_err_2d[i]  << " , " << 
+        ALL_cos_2d[i]  << " , " << ALL_cos_err_2d[i]  << " , " << 
+        AUU_cos_xQ2[i] << " , " << AUU_cos_err_xQ2[i] << " , " << AUU_cos2_xQ2[i] << " , " << AUU_cos2_err_xQ2[i] << " , " << 
+        ALU_sin_2d[i]  << " , " << ALU_sin_err_2d[i] << " , " << 
+        std::setprecision(17) << cov_ALU_AUL_sinPhi_xQ2[i] << " , " << std::setprecision(17) << cov_ALL_cosPhi_AUL_sinPhi_xQ2[i] << " , " << cov_AUU_cosPhi_ALL_cosPhi_xQ2[i] << " , " << 
+        cov_AUU_cosPhi_ALU_sinPhi_xQ2[i] << " , " << cov_AUU_cosPhi_AUL_sinPhi_xQ2[i] << " , " << cov_ALL_cosPhi_ALU_sinPhi_xQ2[i] << " , "  << cov_AUU_cos2Phi_AUL_sin2Phi_xQ2[i] << endl;
     }
 
     for (int z = 0; z < nbin_zPt; z++){
