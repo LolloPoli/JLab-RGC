@@ -561,15 +561,15 @@ for asym, err in asymmetries:
     if asym.startswith("AUU_"):
         axes[0].margins(y=0.15)
     elif asym == "ALU_sinPhi":
-        axes[0].set_ylim(-0.2, 0.2)
+        axes[0].set_ylim(-0.15, 0.15)
     elif asym == "ALL":
         axes[0].set_ylim(-0.1, 0.8)
     elif asym == "ALL_cosPhi":
-        axes[0].set_ylim(-0.6, 0.6)
+        axes[0].set_ylim(-0.2, 0.6)
     elif asym == "AUL_sin2Phi":
-        axes[0].set_ylim(-0.4, 0.5)
+        axes[0].set_ylim(-0.4, 0.4)
     else:
-        axes[0].set_ylim(-0.3, 0.3)
+        axes[0].set_ylim(-0.2, 0.2)
 
     axes[0].set_ylabel(asym_labels[asym], fontsize=13)
     fig.suptitle(r"$K^+$ NH$_3$ Run Group C", fontsize=15, y=0.92)
@@ -588,7 +588,7 @@ for asym, err in asymmetries:
     legend_ax = axes[1] if len(axes) > 1 else axes[0]
     legend_ax.legend(
         handles=legend_handles,
-        loc="upper left",
+        loc="lower left" if asym in {"ALU_sinPhi", "AUL_sin2Phi", "AUL_sinPhi"} else "upper left",
         fontsize=11,
         ncol=1,
         frameon=True,

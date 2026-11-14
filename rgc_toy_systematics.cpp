@@ -630,9 +630,9 @@ void rgc_toy_systematics(const char* period) {
 
 
     // root 'rgc_toy_systematics.cpp("fall22")' -l -b -q
-    int toy_step = 10;
+    int toy_step = 2000;
     bool free_AUU = true; // decide if you want to free the UU modulations or not
-    for (int s = 0; s < toy_step; s++){
+    for (int s = 1900; s < toy_step; s++){
         TString csv_filename_zPt_test = Form("toy_model_wAUU_wFermi/table_RGC_MC_%s_zPt_test_%d.csv", period,s);
         TString csv_filename_xQ2_test = Form("toy_model_wAUU_wFermi/table_RGC_MC_%s_xQ2_test_%d.csv", period,s);
         //std::ofstream csvFile(csv_filename.Data());

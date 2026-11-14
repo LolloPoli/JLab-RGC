@@ -9,8 +9,8 @@ import os
 # ------------------------------------------------------------------
 period = "summer22"          # scegli se summer22 o fall22
 binning = "zPt"              # "zPt" oppure "xQ2"
-toy_dir = "toy_model_noFermi"
-outdir = "TOY_diagnostics_noFermi"
+toy_dir = "toy_model_wAUU_wFermi"
+outdir = "TOY_diagnostics_wAUU_wFermi"
 
 if binning == "zPt":
     bin_column = "bin_zPt"

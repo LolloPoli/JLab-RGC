@@ -12,7 +12,7 @@ import os
 # Scegli:
 #   "zPt" -> binning z-P_hT, con 4 pannelli
 #   "xQ2" -> binning xB-Q2, con un singolo pannello
-binning = "xQ2"
+binning = "zPt"
 
 # ============================================================
 # CONFIGURAZIONE DIPENDENTE DAL BINNING
@@ -26,7 +26,7 @@ if binning == "zPt":
     asym_fall22_file = "RECO_CSV/output_RGC_NH3_asymmetries_fall22.csv"
 
     # CSV sistematiche
-    sys_sum22_file = "TOY_diagnostics_wFermi/toy_summary_summer22_zPt.csv"
+    sys_sum22_file = "TOY_diagnostics_wAUU_wFermi/toy_summary_summer22_zPt.csv"
     sys_fall22_file = "TOY_diagnostics3/toy_summary_fall22_zPt.csv"
 
     # colonne CSV asimmetrie
@@ -48,7 +48,7 @@ elif binning == "xQ2":
     asym_fall22_file = "RECO_CSV/output_RGC_NH3_asymmetries_fall22_xQ2.csv"
 
     # CSV sistematiche
-    sys_sum22_file = "TOY_diagnostics_wFermi/toy_summary_summer22_xQ2.csv"
+    sys_sum22_file = "TOY_diagnostics_wAUU_wFermi/toy_summary_summer22_xQ2.csv"
     sys_fall22_file = "TOY_diagnostics3/toy_summary_fall22_xQ2.csv"
 
     # colonne CSV asimmetrie
@@ -237,6 +237,23 @@ def set_y_limits(ax, asym):
 
     else:
         ax.set_ylim(-0.3, 0.3)
+        
+def set_y_limits_xQ2(ax, asym):
+
+    if asym == "ALU_sinPhi":
+        ax.set_ylim(-0.15, 0.15)
+
+    elif asym == "ALL":
+        ax.set_ylim(-0.1, 0.8)
+
+    elif asym == "ALL_cosPhi":
+        ax.set_ylim(-0.2, 0.6)
+
+    elif asym == "AUL_sin2Phi":
+        ax.set_ylim(-0.4, 0.4)
+
+    else:
+        ax.set_ylim(-0.2, 0.2)
 
 
 # ============================================================
@@ -503,7 +520,7 @@ def plot_campaign_with_sys(
             # --------------------------------------------
 
             style_axis(ax)
-            set_y_limits(ax, asym)
+            set_y_limits_xQ2(ax, asym)
 
             ax.set_xlabel(
                 x_label,

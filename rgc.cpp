@@ -24,6 +24,7 @@
 #include "particle.h"
 #include "particle_detector.h"
 #include "QADB.h"
+#include <TParameter.h>
 
 using namespace clas12;
 using namespace std;
@@ -88,7 +89,7 @@ void LoadPolarization(const std::string& filename) {
 double BeamPolarization_file(Int_t run){
   if (polariz_map.empty()) {
     //std::cout << "Caricamento tabella polarizzazione..." << std::endl;
-    LoadPolarization("fall2022_NH3_goodRuns.txt"); // fall and summer 
+    LoadPolarization("summer22_NH3_goodRuns.txt"); // fall and summer 
   }
   return polariz_map[run];
 }
@@ -142,7 +143,7 @@ bool ElectronPID_CalSFcut(int sector, int runnum, double p, double cal_energy){
       {-41.44, -101.6, -2.673, -2.606, -42.67, -21.73}
     };
   } else if ((runnum >= 11323 && runnum <= 21571) || (runnum >= 11093 && runnum <= 11300)) {
-    // RGB winter 2020 // (also using this for RGB fall 2019, but it should be updated! TODO)
+    // RGB winter 2020 // (also using this for RGB 2019, but it should be updated! TODO)
     e_cal_sampl_mu = {
       {0.2433, 0.2421, 0.2415, 0.2486, 0.2419, 0.2447},
       {-0.8052, -1.0495, -1.1747, -0.5170, -0.6840, -0.9022},
@@ -268,7 +269,7 @@ bool KinematicPID_Vertex(double vz, int torus, int pid){
   bool signal = false;
   if(torus == -1){  // INBENDING
     if(pid > 20){
-      if(-8 < vz && vz < 2.5) signal = true; // summer 22 -10 to +1, while fall22 -8 to +2.5
+      if(-20 < vz && vz < 10) signal = true; // summer 22 -10 to +2.5 for all, even fall22
     } 
     if(pid < 20){
       if(-9 < vz && vz < 1) signal = true; // summer -9, 1, fall and spring use -7.5, 2.5
@@ -730,6 +731,16 @@ void rgc(const char* fileList){
     cout << "total charge: " << Q << endl;
     cout << "positive charge: " << Q_p << endl;
     cout << "negative charge: " << Q_m << endl;
+
+    //outFile.cd();
+
+    TParameter<double> totalCharge("total_charge", Q);
+    TParameter<double> positiveCharge("positive_charge", Q_p);
+    TParameter<double> negativeCharge("negative_charge", Q_m);
+
+    totalCharge.Write();
+    positiveCharge.Write();
+    negativeCharge.Write();
     /*
     double mb = std::min(C_pp + C_pm, C_mp + C_mm);
     double mt = std::min(C_pp + C_mp, C_pm + C_mm);
