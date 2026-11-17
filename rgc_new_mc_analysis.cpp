@@ -357,6 +357,73 @@ int getBinIndex_zPt(double z, double Pt){
     return -1;
 }
 
+int getBinIndex_xQ2_4D(double xB, double Q2){
+    
+    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.5},{0.5, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,1.75}, {1.75,2.5}},                  
+        {{1,2.25}, {2.25,4}},           
+        {{1,2.75}, {2.75,5}},     
+        {{1.5,4}, {4,8}},       
+        {{2.5,6.5},{6.5, 11}}                                 
+    };
+    /*
+   double bin_xB[][2] = {{0.075, 0.225},{0.225, 0.4},{0.4, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,1.75}, {1.75,2}, {2,2.25}, {2.25,2.5}, {2.5,2.75}, {2.75, 3.75}},                         
+        {{1.25,2}, {2,2.75}, {2.75,3.5}, {3.5,4.25}, {4.25,5}, {5, 6.5}},                                 
+        {{1.75,3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 11}}                                 
+    };
+    */
+    int binIndex = 1;
+    for (int ix = 0; ix < 5; ix++){
+        if (xB >= bin_xB[ix][0] && xB < bin_xB[ix][1]){
+            for (size_t iq = 0; iq < binning_Q2_for_xB[ix].size(); iq++){
+                double Q2min = binning_Q2_for_xB[ix][iq][0];
+                double Q2max = binning_Q2_for_xB[ix][iq][1];
+                if (Q2 >= Q2min && Q2 < Q2max){
+                    return binIndex;
+                }
+                binIndex++;
+            }
+            return -1;
+        } else {
+            binIndex += binning_Q2_for_xB[ix].size();
+        }
+    }
+    return -1;
+}
+
+
+int getBinIndex_zPt_4D(double z, double Pt){
+    double bin_Pt[][2] = {{0, 0.2}, {0.2, 0.4}, {0.4, 0.6}, {0.6, 1.4}};
+    vector<vector<array<double,2>>> binning_z_for_Pt = {
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}}
+    };
+    int binIndex = 1;
+    for (int ipt = 0; ipt < 4; ipt++){
+        if (Pt >= bin_Pt[ipt][0] && Pt <= bin_Pt[ipt][1]){
+            for (size_t iz = 0; iz < binning_z_for_Pt[ipt].size(); iz++){
+                double z_min = binning_z_for_Pt[ipt][iz][0];
+                double z_max = binning_z_for_Pt[ipt][iz][1];
+                if (z >= z_min && z < z_max){
+                    return binIndex;
+                }
+                binIndex++;
+            }
+            // nel caso non si trovi un valore di Pt
+            return -1;
+        } else {
+            binIndex += binning_z_for_Pt[ipt].size();
+        }
+    }
+
+    return -1;
+}
+
 int getBinIndex_z(double z){
     double bin_z[][2] = {{0.2, 0.3}, {0.3, 0.4}, {0.4, 0.5}, {0.5, 0.6}, {0.6, 0.7}, {0.7, 0.8}, {0.8, 1.0}};
     int binIndex = 1;
@@ -575,6 +642,13 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
         {{0.2, 0.3}, {0.3, 0.4}, {0.4, 0.5}, {0.5, 0.6}, {0.6, 0.7}, {0.7, 0.8}, {0.8, 1.0}},
         {{0.2, 0.5}, {0.5, 0.6}, {0.6, 0.7}, {0.7, 1.0}}
     };
+    double bin_Pt_4D[][2] = {{0, 0.2}, {0.2, 0.4}, {0.4, 0.6}, {0.6, 1.4}};
+    vector<vector<array<double,2>>> binning_z_for_Pt_4D = {
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}}
+    };
 
     //string inputDir = "fall22_NH3_data";
     //string inputDir = "fall22_NH3_data";
@@ -630,12 +704,14 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
     TString csv_filename_zPt_test = Form("RGC_MC_PLOT/table_RGC_MC_%s_zPt_test.csv", period);
     TString csv_filename_AUU_xQ2 = Form("RECO_CSV/table_RGC_MC_%s_AUU_xQ2.csv", period);
     TString csv_filename_AUU_zPt = Form("RECO_CSV/table_RGC_MC_%s_AUU_zPt.csv", period);
+    TString csv_filename_AUU_4D = Form("RECO_CSV/table_RGC_MC_%s_AUU_4D.csv", period);
     //std::ofstream csvFile(csv_filename.Data());
     //std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
     std::ofstream csvFile_zPt(csv_filename_zPt.Data());
     std::ofstream csvFile_zPt_test(csv_filename_zPt_test.Data());
     std::ofstream csvFile_AUU_xQ2(csv_filename_AUU_xQ2.Data());
     std::ofstream csvFile_AUU_zPt(csv_filename_AUU_zPt.Data());
+    std::ofstream csvFile_AUU_4D(csv_filename_AUU_4D.Data());
     //csvFile << " n_events, binxBQ2, bin_zPt, mean_xB, mean_Q2, mean_z, mean_PhT, epsilon, efficiency, eff_binom_err, PID_sys, PID_sys_err, Purity_sys, Purity_sys_err,Acc_sys, Acc_sys_err, Bin_mig_sys, Bin_mig_sys_err, Phih_sys_sinx, Phih_sys_sinx_err, Phih_sys_sin2x, Phih_sys_sin2x_err, Phih_sys_cosx, Phih_sys_cosx_err, Phih_sys_cos2x, Phih_sys_cos2x_err, Auu_cos, Auu_cos_err, Auu_cos2, Auu_cos2_err, Auu_cont_sinx, Auu_cont_sin2x\n";
     //csvFile_xQ2 << " n_events, binxBQ2, bin_zPt, mean_xB, mean_Q2, mean_z, mean_PhT, epsilon, efficiency, eff_binom_err, PID_sys, PID_sys_err, Purity_sys, Purity_sys_err, Acc_sys, Acc_sys_err, Bin_mig_sys, Bin_mig_sys_err, Phih_sys_sinx, Phih_sys_sinx_err, Phih_sys_sin2x, Phih_sys_sin2x_err, Phih_sys_cosx, Phih_sys_cosx_err, Phih_sys_cos2x, Phih_sys_cos2x_err, Auu_cos, Auu_cos_err, Auu_cos2, Auu_cos2_err, Auu_cont_sinx, Auu_cont_sin2x\n";
     csvFile_zPt << " n_events, binxBQ2, bin_zPt, mean_xB, mean_Q2, mean_z, mean_PhT, epsilon, efficiency, eff_binom_err, PID_sys, PID_sys_err, Purity_sys, Purity_sys_err, Acc_sys, Acc_sys_err, Bin_mig_sys, Bin_mig_sys_err\n";
@@ -644,6 +720,7 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
             << "Acc_sys,Acc_sys_err,PID_sys,PID_sys_err,Purity_sys,Purity_sys_err,Bin_mig_sys,Bin_mig_sys_err\n";
     csvFile_AUU_xQ2 << "bin, M0, M1, M2, M1/M0, M2/M0\n";
     csvFile_AUU_zPt << "bin, M0, M1, M2, M1/M0, M2/M0\n";
+    csvFile_AUU_4D << "bin_xB, bin_zPt, M0, M1, M2, M1/M0, M2/M0\n";
 
     TFile outFile(outputFile.Data(), "RECREATE");  // File di output ROOT
     TTree treeKaonP("Kaon+", "");
@@ -948,6 +1025,8 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
 
     double nbin_xQ2 = 14;
     double nbin_zPt = 25;
+    double nbin_xQ2_4D = 10;
+    double nbin_zPt_4D = 16;
     // 2D
     vector<TH2D*> hist_xBvsQ2_binned(nbin_xQ2);
     vector<TH2D*> hist_zvsPt_binned(nbin_zPt);
@@ -1398,6 +1477,9 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
     vector<double> M0_zPt(nbin_zPt, 0.0);
     vector<double> M1_zPt(nbin_zPt, 0.0);
     vector<double> M2_zPt(nbin_zPt, 0.0);
+    vector<vector<double>> M0_4D(nbin_xQ2, vector<double>(nbin_zPt, 0.0));
+    vector<vector<double>> M1_4D(nbin_xQ2, vector<double>(nbin_zPt, 0.0));
+    vector<vector<double>> M2_4D(nbin_xQ2, vector<double>(nbin_zPt, 0.0));
 
     const int nBins_cont = 12;
 
@@ -1478,6 +1560,8 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
         if (!std::isfinite(kaonp_PhT_mc)) continue;
         double index_xQ2 = getBinIndex_xQ2(kaonp_xB_mc, kaonp_Q2_mc); 
         double index_zPt = getBinIndex_zPt(kaonp_z_mc, kaonp_PhT_mc);
+        double index_zPt_4D = getBinIndex_zPt_4D(kaonp_z_mc, kaonp_PhT_mc);
+        double index_xQ2_4D = getBinIndex_xQ2_4D(kaonp_xB_mc, kaonp_Q2_mc);
         //if (index_xQ2 != 11) continue;
         double kp_mc_theta_deg = kaonp_Theta_mc * 180.0 / TMath::Pi();
 
@@ -1863,6 +1947,8 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
                 double index_zPt = getBinIndex_zPt(kaonp_z, kaonp_PhT);
                 double mc_index_xQ2 = getBinIndex_xQ2(kaonp_xB_recoMC, kaonp_Q2_recoMC);
                 double mc_index_zPt = getBinIndex_zPt(kaonp_z_recoMC, kaonp_Pt_recoMC);
+                double index_zPt_4D = getBinIndex_zPt_4D(kaonp_z, kaonp_PhT);
+                double index_xQ2_4D = getBinIndex_xQ2_4D(kaonp_xB, kaonp_Q2);
                 proton_spin = +1;
                 if(kaonp_Pol < 0) proton_spin = -1;
                 kaonp_sintheta = kaonp_gamma*sqrt((1-kaonp_y-0.25*kaonp_y*kaonp_y*kaonp_gamma*kaonp_gamma)/(1+kaonp_y*kaonp_y));
@@ -1905,6 +1991,13 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
                     //cont
                     int bin_cont = cont_bin_mom(kaonp_Ph);
                     vec_recoID_mom[bin_cont].push_back(kaonp_y_recoMC);
+                    }
+                }
+                if(index_xQ2_4D >= 0 && index_zPt_4D >= 0) {
+                    if(keep_injected_reco[i]){
+                        M0_4D[index_xQ2-1][index_zPt_4D-1] += q;
+                        M1_4D[index_xQ2-1][index_zPt_4D-1] += q * std::sqrt(2.0 * kaonp_epsilon * (1.0 + kaonp_epsilon)) * std::cos(kaonp_Phi_h);
+                        M2_4D[index_xQ2-1][index_zPt_4D-1] += q * kaonp_epsilon * std::cos(2.0 * kaonp_Phi_h);
                     }
                 }
                 if(index_xQ2 >= 0) {
@@ -3699,7 +3792,18 @@ void rgc_new_mc_analysis(const char* period, const bool usaFermi = true) {
 
     // ------------------------------------------------------------------------------------------------------------------------------
 
-
+    for (int ix = 0; ix < nbin_xQ2_4D; ix++){
+        for (int iz = 0; iz < nbin_zPt_4D; iz++){
+            csvFile_AUU_4D << std::setprecision(17);
+            double A = M1_4D[ix][iz]/M0_4D[ix][iz];
+            double B = M2_4D[ix][iz]/M0_4D[ix][iz];
+            if (M0_4D[ix][iz] == 0) {
+                A = 0;
+                B = 0;
+            }
+            csvFile_AUU_4D << ix+1 << " , " << iz+1 << " , " << M0_4D[ix][iz] << " , " << M1_4D[ix][iz] << " , " << M2_4D[ix][iz] << " , " << A << " , " << B << "\n";
+        }
+    }
     for (int ix = 0; ix < nbin_xQ2; ix++){
         cout << "true: " << ALL_0_2d_true[ix] << "  reco: " << ALL_0_2d_reco[ix] << endl;
         csvFile_AUU_xQ2 << std::setprecision(17);

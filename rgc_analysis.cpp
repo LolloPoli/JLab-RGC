@@ -34,161 +34,186 @@ double MeanVect(const vector<double>& v) {
     return sum / v.size();
 }
 
-double AUL_loglike(const double* Aul,
-                   const vector<double>& phi_h,
-                   const vector<double>& spinstate, // +1 or -1 for target orientation
-                   const vector<double>& depol,  // D(kin) or 1 if not used
-                   const vector<double>& Ptarget, // nominal P_target
-                   const vector<double>& sintheta,
-                   bool use_spinstate_for_helicity = true)
-{
-    double logLike = 0.0;
-    const double A_sin  = Aul[0];
-    const double A_sin2 = Aul[1]; 
-    //const double A_sin3 = Aul[2];
-    double dilution = 1;
-    // rapporto di luminosità osservato (N+ / N−)
-    double Nplus = 0.0;
-    double Nminus = 0.0;
-    for (size_t i = 0; i < Ptarget.size(); ++i) {
-        if (Ptarget[i] > 0) Nplus++;
-        else               Nminus++;
+double getDilutionFactor(const char* period, int binning, int bin){
+    // Cache: one set of dilution factors per campaign
+    static double df_xQ2[3][15] = {};  // 14 bins, indexed 1–14
+    static double df_zPt[3][26] = {};  // 25 bins, indexed 1–25
+    static bool loaded[3] = {false, false, false};
+    int p = -1;
+    std::string filename;
+    if (strcmp(period, "sum22") == 0) {
+        p = 0;
+        filename = "dilution_factor/DF_Kplus_summer22.csv";
     }
-    double r = Nplus / Nminus;
+    else if (strcmp(period, "fall22") == 0) {
+        p = 1;
+        filename = "dilution_factor/DF_Kplus_fall22.csv";
+    }
+    else if (strcmp(period, "spring23") == 0) {
+        p = 2;
+        filename = "dilution_factor/DF_Kplus_spring23.csv";
+    }
+    else {
+        throw std::runtime_error("Unknown period: " + std::string(period));
+    }
+    // Load CSV only once per campaign
+    if (!loaded[p]) {
+        std::ifstream file(filename);
+        if (!file.is_open())
+            throw std::runtime_error("Cannot open DF file: " + filename);
+        std::string line;
+        std::getline(file, line);  // Skip header
+        while (std::getline(file, line)) {
+            std::stringstream ss(line);
+            std::vector<std::string> col;
+            std::string value;
+            while (std::getline(ss, value, ','))
+                col.push_back(value);
 
-    for (size_t i = 0; i < phi_h.size(); ++i) {
-        double eps = depol[i];
-        double D_sin  = sqrt(2*eps*(1+eps));
-        double D_2sin = eps;
+            if (col.size() < 9)
+                continue;
 
-        // modello di asimmetria
-        double modulation = D_sin * A_sin * sin(phi_h[i]) + D_2sin * A_sin2 * sin(2.0*phi_h[i]);
+            const std::string& type = col[1];
+            int index = std::stoi(col[2]);
+            double df = std::stod(col[7]);
 
-        double pol_factor = Ptarget[i] * dilution; 
+            // Set to 5.86/5.0 ONLY if CSV was produced
+            // with pfcell=true. Otherwise use 1.0.
+            constexpr double pfScale = 1.0;
+            df *= pfScale;
+            if (!std::isfinite(df))
+                continue;
+            if (type == "xB_Q2" && index >= 1 && index <= 14)
+                df_xQ2[p][index] = df;
+            else if (type == "z_Pt" && index >= 1 && index <= 25)
+                df_zPt[p][index] = df;
+        }
+        loaded[p] = true;
+    }
 
-        // correzione per luminosità asimmetrica
-        double Seff = pol_factor * modulation;
-        double numer = r * (1.0 + Seff);
-        double denom = r * (1.0 + Seff) + (1.0 - Seff);
-        double arg = numer / denom; // probabilità per spin = +1 
+    if (binning == 1 && bin >= 1 && bin <= 14 && df_xQ2[p][bin] > 0)
+        return df_xQ2[p][bin];
 
-        // gestione spin state
-        double prob;
-        if (use_spinstate_for_helicity) {
-            if (spinstate[i] == +1) {
-                prob = arg;
-            } else {
-                prob = 1.0 - arg;
-            }
-        } else {
-            prob = arg;
+    if (binning == 2 && bin >= 1 && bin <= 25 && df_zPt[p][bin] > 0)
+        return df_zPt[p][bin];
+
+    throw std::runtime_error(
+        "Dilution factor not found for period " +
+        std::string(period) + ", bin " + std::to_string(bin)
+    );
+}
+
+
+struct AUUMoments {
+    std::vector<double> mean_cos1;
+    std::vector<double> mean_cos2;
+};
+
+AUUMoments load_AUU_moments_4D(
+    const std::string& filename,
+    int nbins_xQ2,
+    int nbins_zPt)
+{
+    if (nbins_xQ2 <= 0 || nbins_zPt <= 0)
+        throw std::runtime_error("Numero di bin non valido");
+
+    const int nbins = nbins_xQ2 * nbins_zPt;
+
+    std::ifstream file(filename);
+    if (!file)
+        throw std::runtime_error("Impossibile aprire: " + filename);
+
+    const double invalid = std::numeric_limits<double>::quiet_NaN();
+
+    AUUMoments result{
+        std::vector<double>(nbins, invalid),
+        std::vector<double>(nbins, invalid)
+    };
+
+    std::vector<bool> found(nbins, false);
+    std::string line;
+
+    if (!std::getline(file, line))
+        throw std::runtime_error("CSV vuoto: " + filename);
+
+    int line_number = 1;
+
+    while (std::getline(file, line)) {
+        ++line_number;
+
+        if (line.find_first_not_of(" \t\r") == std::string::npos)
+            continue;
+
+        std::replace(line.begin(), line.end(), ',', ' ');
+        std::istringstream row(line);
+
+        int bin_xQ2, bin_zPt;
+        double M0, M1, M2, mean1, mean2;
+
+        if (!(row >> bin_xQ2 >> bin_zPt
+                  >> M0 >> M1 >> M2 >> mean1 >> mean2))
+            throw std::runtime_error(
+                "Riga CSV non valida: " + filename +
+                ", riga " + std::to_string(line_number));
+
+        if (bin_xQ2 < 1 || bin_xQ2 > nbins_xQ2 ||
+            bin_zPt < 1 || bin_zPt > nbins_zPt)
+            throw std::runtime_error(
+                "Bin fuori intervallo alla riga " +
+                std::to_string(line_number));
+
+        // Indice linearizzato, da 0 a nbins-1.
+        const int index =
+            (bin_xQ2 - 1) * nbins_zPt + (bin_zPt - 1);
+
+        if (found[index])
+            throw std::runtime_error(
+                "Coppia di bin duplicata alla riga " +
+                std::to_string(line_number));
+
+        if (M0 == 0.0) {
+            // Bin cinematicamente vuoto
+            found[index] = true;
+            continue;
         }
 
-        if (prob <= 1e-8) return 1e-8;
-        logLike += log(prob);
+        if (!std::isfinite(M0) || M0 <= 0.0 ||
+            !std::isfinite(M1) || !std::isfinite(M2) ||
+            !std::isfinite(mean1) || !std::isfinite(mean2))
+            throw std::runtime_error(
+                "Momenti MC non validi alla riga " +
+                std::to_string(line_number));
+
+        result.mean_cos1[index] = mean1;
+        result.mean_cos2[index] = mean2;
+        found[index] = true;
     }
 
-    return -logLike;
+    for (int index = 0; index < nbins; ++index) {
+        if (!found[index])
+            throw std::runtime_error(
+                "Bin 4D mancante, indice " +
+                std::to_string(index));
+    }
+
+    return result;
 }
-/*
-double AUL_loglike_withLL(const double* Aul,
-                   const vector<double>& phi_h,
-                   const vector<double>& spinstate,    // +1 or -1 for target orientation
-                   const vector<double>& depol,    // eps per-event
-                   const vector<double>& Ptarget,  // P_target per-event (aligned to gamma* frame)
-                   const vector<double>& helicity,    // beam helicity per-event (+1/-1)
-                   const vector<double>& sintheta,
-                   bool use_spinstate_for_helicity = true)
-{
-    double logLike = 0.0;
 
-    // [0]=A_UL_sin, [1]=A_UL_sin2, [2]=A_UL_sin3,
-    // [3]=A_LL_0 (phi-independent), [4]=A_LL_cosphi, [5]=A_LL_cos2phi
-    const double A_sin      = Aul[0];
-    const double A_sin2     = Aul[1];
-    const double A_sin3     = Aul[2];
-    const double A_LL_0     = Aul[3];
-    const double A_LL_cos1  = Aul[4];
-    const double A_LL_cos2  = Aul[5];
-    //const double A_UU_cos1  = Aul[6];
-    //const double A_UU_cos2  = Aul[7];
-    //const double Azim_asy   = Aul[6];
-    const double dilution = 17.0/3.0;
-
-    // rapporto di luminosità 
-    double Nplus = 0.0;
-    double Nminus = 0.0;
-    for (size_t i = 0; i < spinstate.size(); ++i) {
-        if (spinstate[i] > 0) Nplus++;
-        else Nminus++;
-    }
-    double r = Nplus / Nminus;
-
-    for (size_t i = 0; i < phi_h.size(); ++i) {
-        double eps = depol[i];
-        // depolarization factors
-        double D_sin   = sqrt(2.0 * eps * (1.0 + eps));      // per sin phi (UL)
-        double D_2sin  = eps;                                // per sin 2phi (UL)
-
-        // UL modulation - Add A_sin2eff if you want to switch to TSA
-        double UL_mod = D_sin * A_sin * sin(phi_h[i])
-                      + D_2sin * A_sin2 * sin(2.0 * phi_h[i])
-                      - A_sin3 * sin(3.0 * phi_h[i]);
-
-        // LL depolarization factors
-        double D_LL_0   = sqrt(1.0 - eps*eps);               // phi-independent
-        double D_LL_cos = sqrt(2.0 * eps * (1.0 - eps));     // cos phi
-        double D_LL_cos2 = 1.0;                              // 
-
-        int lam = helicity[i]; 
-        double LL_mod = D_LL_0 * A_LL_0
-                      + D_LL_cos * A_LL_cos1 * cos(phi_h[i])
-                      - D_LL_cos2 * A_LL_cos2 * cos(2.0 * phi_h[i]);
-
-
-        double D_UU_1 = sqrt(2*eps*(1+eps));
-        double D_UU_2 = eps;
-        //double UU_mod = 1 + D_UU_1 * A_UU_cos1 * cos(phi_h[i]) + D_UU_2 * A_UU_cos2 + cos(2*phi_h[i]);
-
-        // totale (LL moltiplicato per lambda)
-        double modulation = UL_mod + lam * LL_mod;
-
-        // effective polarization (target * dilution)
-        double pol_factor = fabs(Ptarget[i]); 
-        double SUL =  dilution * pol_factor * UL_mod;
-        double SLL = dilution * pol_factor * lam * LL_mod;
-        //double Seff =  (dilution * pol_factor * modulation);
-        double Seff = SUL + SLL;
-
-        // CORREZIONE luminosità
-        double numer = r * (1.0 + Seff);
-        double denom = numer + (1.0 - Seff);
-        double arg = numer / denom; // prob 
-        double prob;
-        if (use_spinstate_for_helicity) {
-            // attenzione: qui usi convenzione spinstate -1 -> arg
-            if (spinstate[i] > 0) prob = arg;
-            else    prob = 1.0 - arg;
-        } else {
-            prob = arg;
-        }
-
-        if (prob <= 1e-6) return 1e-6;
-        logLike += log(prob);
-    }
-
-    return -logLike; // minimize -logL
-}
-*/
 
 double AUL_loglike_withLL(const double* Aul,
                           const vector<double>& phi_h,
                           const vector<double>& spinstate,   // +1 / -1 (target helicity)
+                          const vector<double>& y_vec,           // inelasticity
                           const vector<double>& depol,       // eps
                           const vector<double>& Ptarget,     // target polarization
                           const vector<double>& helicity,    // beam helicity (+1 / -1)
                           const vector<double>& sintheta,
-                          bool use_spinstate_for_helicity = true)
+                          const double dilution,
+                          const double mc_mean_cos1,
+                          const double mc_mean_cos2,
+                          bool use_spinstate_for_helicity = true,
+                          const char* target = "NH3",
+                          const char* campaign = "fall22")
 {
     double logLike = 0.0;
 
@@ -200,85 +225,110 @@ double AUL_loglike_withLL(const double* Aul,
     const double A_UU_cos1  = Aul[4];
     const double A_UU_cos2  = Aul[5];
     const double A_LU_sin   = Aul[6];
-    //const double A_sin3     = Aul[7];
-    //const double A_LL_cos2  = Aul[8];
 
-    const double dilution = 0.24;
+    double pBeam = 0.84; // typical value for CLAS12
 
-    // -------- Relative luminosity weights --------
-    double Nplus = 0.0, Nminus = 0.0;
-    for (size_t i = 0; i < spinstate.size(); ++i) {
-        if (spinstate[i] > 0) Nplus++;
-        else                  Nminus++;
-    }
+    // -------- Dilution factor & Relative luminosity weights --------
 
-    // protect against division by zero
-    if (Nplus <= 0 || Nminus <= 0) return 1e12;
+    //double dilution = 0.24;  // default NH3
+    double w = 1.0;
+    double w_pp = 1.0; // beam +1 , target +1
+    double w_mp = 1.0; // beam -1 , target +1
+    double w_pm = 1.0; // beam +1 , target -1
+    double w_mm = 1.0; // beam -1 , target -1
+    if (strcmp(target, "NH3") == 0){
+        //dilution = 0.24;
+        if (strcmp(campaign, "fall22") == 0){
+            w_pp = 0.934205;
+            w_mp = 0.935465;
+            w_pm = 0.998652;
+            w_mm = 1.0;
+            pBeam = 0.8372;
+        } 
+        else if (strcmp(campaign, "sum22") == 0){
+            w_pp = 0.996267;
+            w_mp = 1.0;
+            w_pm = 0.683416;
+            w_mm = 0.685976;
+            pBeam = 0.8384;
+        } 
+        else if (strcmp(campaign, "spring23") == 0){
+            w_pp = 0.545392;
+            w_mp = 0.545939;
+            w_pm = 0.99902;
+            w_mm = 1.0;
+            pBeam = 0.8040;
+        }
+    } 
+    else if (strcmp(target, "ND3") == 0){
+        //dilution = 0.32;
+        if (strcmp(campaign, "fall22") == 0){
+            w_pp = 0.998544;
+            w_mp = 1.0;
+            w_pm = 0.894826;
+            w_mm = 0.896131;
+            pBeam = 0.8372;
+        } 
+        else if (strcmp(campaign, "sum22") == 0){
+            w_pp = 0.99734;
+            w_mp = 1.0;
+            w_pm = 0.996021;
+            w_mm = 0.998677;
+            pBeam = 0.8384;
+        }
+    } 
 
-    const double w_plus  = 0.5 * (Nplus + Nminus) / Nplus;
-    const double w_minus = 0.5 * (Nplus + Nminus) / Nminus;
+    // --- AUU norm ---
+    const double normUU = 1.0 + A_UU_cos1 * mc_mean_cos1 + A_UU_cos2 * mc_mean_cos2;
+    if (!std::isfinite(normUU) || normUU <= 0.0) return 1e12;
+    double sumWeights = 0.0;
 
     // -------- Event loop --------
     for (size_t i = 0; i < phi_h.size(); ++i) {
 
         const double eps = depol[i];
-
-        // --- Depolarization factors ---
-        const double D_sin   = sqrt(2.0 * eps * (1.0 + eps));
-        const double D_2sin  = eps;
-
-        const double D_LL_0    = sqrt(1.0 - eps * eps);
-        const double D_LL_cos  = sqrt(2.0 * eps * (1.0 - eps));
-        const double D_LL_cos2 = 1.0;
-
-        const double D_UU_cos1 = sqrt(2.0 * eps * (1.0 + eps));
-        const double D_UU_cos2 = eps;
-
-        const double D_LU_sin = sqrt(2.0 * eps * (1.0 - eps));
-
-        // --- UL modulation ---
-        const double UL_mod =
-              D_sin  * A_sin  * sin(phi_h[i])
-            + D_2sin * A_sin2 * sin(2.0 * phi_h[i]);
-            //- A_sin3 * sin(3.0 * phi_h[i]);
-
-        // --- LL modulation ---
         const int lam = helicity[i];
-        const double LL_mod =
-              D_LL_0    * A_LL_0
-            + D_LL_cos  * A_LL_cos1 * cos(phi_h[i]);
-            //- D_LL_cos2 * A_LL_cos2 * cos(2.0 * phi_h[i]);
+        double y = y_vec[i];
 
-        // --- UU modulation ---
-        const double UU_mod =
-            D_UU_cos1 * A_UU_cos1 * cos(phi_h[i])
-            + D_UU_cos2 * A_UU_cos2 * cos(2.0 * phi_h[i]);
+        double A = (y*y)/(2*(1-eps));
+        double B = ((y*y)/(2*(1-eps))) * eps;
+        double C = ((y*y)/(2*(1-eps))) * sqrt(1.0 - eps * eps);
+        double V = ((y*y)/(2*(1-eps))) * sqrt(2.0 * eps * (1.0 + eps));
+        double W = ((y*y)/(2*(1-eps))) * sqrt(2.0 * eps * (1.0 - eps));
+
+       // --- UU modulation ---
+        const double UU_mod = (V/A) * A_UU_cos1 * cos(phi_h[i]) + (B/A) * A_UU_cos2 * cos(2.0 * phi_h[i]);
         // --- LU modulation ---
-        const double LU_mod =
-            D_LU_sin * A_LU_sin * sin(phi_h[i]);
-
+        const double LU_mod = (W/A) * A_LU_sin * sin(phi_h[i]);
+        // --- UL modulation ---
+        const double UL_mod = (V/A) * A_sin * sin(phi_h[i]) + (B/A) * A_sin2 * sin(2.0 * phi_h[i]);
+        // --- LL modulation ---
+        const double LL_mod = (C/A) * A_LL_0 + (W/A) * A_LL_cos1 * cos(phi_h[i]);
 
         // --- Effective polarization ---
-        const double pol = dilution * fabs(Ptarget[i]);
+        const double pol = dilution * Ptarget[i];
 
         // Full spin-dependent term
-        const double Seff = pol * spinstate[i] * (UL_mod + lam * LL_mod);
+        const double Seff = pol * (UL_mod + lam * pBeam *LL_mod);
 
         // --- Likelihood argument ---
-        const double arg = 1.0 + UU_mod + lam*LU_mod + Seff;
+        const double arg = 1.0 + UU_mod + lam*pBeam*(LU_mod) + pol*(UL_mod) + lam*pBeam*pol*(LL_mod);
 
         // Physical protection
         if (arg <= 0.0) return 1e12;
 
         // --- Luminosity weight ---
-        const double w = (spinstate[i] > 0 ? w_plus : w_minus);
-
+        if (helicity[i] > 0 && spinstate[i] > 0) w = w_pp;
+        else if (helicity[i] > 0 && spinstate[i] < 0) w = w_pm;
+        else if (helicity[i] < 0 && spinstate[i] > 0) w = w_mp;
+        else if (helicity[i] < 0 && spinstate[i] < 0) w = w_mm;
+        sumWeights += w;
         logLike += w * log(arg);
     }
 
-    return -logLike;
+    //return -logLike;
+    return sumWeights * std::log(normUU) - logLike;
 }
-
 
 bool KinematicPID_Vertex(double vz, int torus, int pid){
   bool signal = false;
@@ -333,13 +383,12 @@ void SetStatsBox2(TH2* hist) {
 
 
 bool passRichSelection(double RL, double RQ, int nTot, int rich_pid, int track_pid, double rich_chi2, double Ph, double phi){
-
     double mA = 0.04, qA = -0.02;
     double mB = 0.04, qB = -0.02;
     double mC = 0.06, qC = -0.08;
     double mD = 0.06, qD = -0.08;
     if(nTot == 0){
-        if(Ph <= 3.5){
+        if(Ph <= 3.0){
             if(track_pid == 321) return true;
             else return false;
         }
@@ -352,13 +401,13 @@ bool passRichSelection(double RL, double RQ, int nTot, int rich_pid, int track_p
                     if (RL > 6 || RQ < 0.1 || nTot <= 2) return false;
 
                     double m = 0.0, q = 0.0;
-                    if (rich_chi2 < 50 && Ph <= 3) {
+                    if (rich_chi2 < 50 && Ph <= 3.0) {
                         m = mA; q = qA;
-                    } else if (rich_chi2 < 50 && Ph > 3) {
+                    } else if (rich_chi2 < 50 && Ph > 3.0) {
                         m = mB; q = qB;
-                    } else if (rich_chi2 >= 50 && Ph <= 3) {
+                    } else if (rich_chi2 >= 50 && Ph <= 3.0) {
                         m = mC; q = qC;
-                    } else { // rich_chi2 >= 50 && Ph > 3
+                    } else { 
                         m = mD; q = qD;
                     }
                     double y_limit = m * RL + q;
@@ -371,34 +420,32 @@ bool passRichSelection(double RL, double RQ, int nTot, int rich_pid, int track_p
                     if (RL > 6 || RQ < 0.1 || nTot <= 2) return false;
                     return true;
                 }
+                // RICH: hadron and CLAS: kaon
+                if (rich_pid != 321 && Ph <= 3.0) { // since we cannot trust CLAS above 3.0 GeV
+                    if (RL > 6.5 && nTot <= 5) return true; // the oppisite, if the RICH is bad, we want these data, we trust CLAS
+                    if (RQ < 0.1) return true;
+
+                    double m = 0.0, q = 0.0;
+                    if (rich_chi2 < 50 && Ph <= 3.0) {
+                        m = mA; q = qA;
+                    } else if (rich_chi2 < 50 && Ph > 3.0) {
+                        m = mB; q = qB;
+                    } else if (rich_chi2 >= 50 && Ph <= 3.0) {
+                        m = mC; q = qC;
+                    } else { // rich_chi2 >= 50 && Ph > 3.0
+                        m = mD; q = qD;
+                    }
+                    double y_limit = m * RL + q;
+                    double x_limit = (RQ - q)/m;
+                    if (RL > x_limit) return true; 
+
+                    return false;
+                }
             }
         }
-        else if(Ph < 1.5){
+        else if(Ph < 3.0){
             if(track_pid == 321) return true;
             else return false;
-        }
-        // RICH: hadron and CLAS: kaon
-        if (rich_pid != 321 && Ph <= 3) { // since we cannot trust CLAS above 3 GeV
-            if(std::abs(phi) >= 2.6){
-                if (RL > 6.5 && nTot <= 5) return true; // the oppisite, if the RICH is bad, we want these data, we trust CLAS
-                if (RQ < 0.1) return true;
-
-                double m = 0.0, q = 0.0;
-                if (rich_chi2 < 50 && Ph <= 3) {
-                    m = mA; q = qA;
-                } else if (rich_chi2 < 50 && Ph > 3) {
-                    m = mB; q = qB;
-                } else if (rich_chi2 >= 50 && Ph <= 3) {
-                    m = mC; q = qC;
-                } else { // rich_chi2 >= 50 && Ph > 3
-                    m = mD; q = qD;
-                }
-                double y_limit = m * RL + q;
-                double x_limit = (RQ - q)/m;
-                if (RL > x_limit) return true; 
-
-                return false;
-            }
         }
     }
 
@@ -434,6 +481,43 @@ int getBinIndex_xQ2(double xB, double Q2){
     return -1;
 }
 
+int getBinIndex_xQ2_4D(double xB, double Q2){
+    
+    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.5},{0.5, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,1.75}, {1.75,2.5}},                  
+        {{1,2.25}, {2.25,4}},           
+        {{1,2.75}, {2.75,5}},     
+        {{1.5,4}, {4,8}},       
+        {{2.5,6.5},{6.5, 11}}                                 
+    };
+    /*
+   double bin_xB[][2] = {{0.075, 0.225},{0.225, 0.4},{0.4, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,1.75}, {1.75,2}, {2,2.25}, {2.25,2.5}, {2.5,2.75}, {2.75, 3.75}},                         
+        {{1.25,2}, {2,2.75}, {2.75,3.5}, {3.5,4.25}, {4.25,5}, {5, 6.5}},                                 
+        {{1.75,3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 11}}                                 
+    };
+    */
+    int binIndex = 1;
+    for (int ix = 0; ix < 5; ix++){
+        if (xB >= bin_xB[ix][0] && xB < bin_xB[ix][1]){
+            for (size_t iq = 0; iq < binning_Q2_for_xB[ix].size(); iq++){
+                double Q2min = binning_Q2_for_xB[ix][iq][0];
+                double Q2max = binning_Q2_for_xB[ix][iq][1];
+                if (Q2 >= Q2min && Q2 < Q2max){
+                    return binIndex;
+                }
+                binIndex++;
+            }
+            return -1;
+        } else {
+            binIndex += binning_Q2_for_xB[ix].size();
+        }
+    }
+    return -1;
+}
+
 int getBinIndex_zPt(double z, double Pt){
     double bin_Pt[][2] = {{0, 0.25}, {0.25, 0.5}, {0.5, 0.8}, {0.8, 1.4}};
     vector<vector<array<double,2>>> binning_z_for_Pt = {
@@ -464,8 +548,37 @@ int getBinIndex_zPt(double z, double Pt){
 }
 
 
+int getBinIndex_zPt_4D(double z, double Pt){
+    double bin_Pt[][2] = {{0, 0.2}, {0.2, 0.4}, {0.4, 0.6}, {0.6, 1.4}};
+    vector<vector<array<double,2>>> binning_z_for_Pt = {
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}}
+    };
+    int binIndex = 1;
+    for (int ipt = 0; ipt < 4; ipt++){
+        if (Pt >= bin_Pt[ipt][0] && Pt <= bin_Pt[ipt][1]){
+            for (size_t iz = 0; iz < binning_z_for_Pt[ipt].size(); iz++){
+                double z_min = binning_z_for_Pt[ipt][iz][0];
+                double z_max = binning_z_for_Pt[ipt][iz][1];
+                if (z >= z_min && z < z_max){
+                    return binIndex;
+                }
+                binIndex++;
+            }
+            // nel caso non si trovi un valore di Pt
+            return -1;
+        } else {
+            binIndex += binning_z_for_Pt[ipt].size();
+        }
+    }
 
-void rgc_analysis() {
+    return -1;
+}
+
+
+void rgc_analysis(const char* period, const char* target) {
     // Istanza di TDatabasePDG per accedere alle proprietà delle particelle, non va in conflitto con clas12database, sono indipendenti
     auto db2 = TDatabasePDG::Instance();
     // Variables
@@ -503,6 +616,7 @@ void rgc_analysis() {
     double kaonp_beta, kaonp_m, kaonp_bestMass, kaonp_Pt_zQ, kaonp_gamma;
     double kaonp_rich_tr1_edge, kaonp_rich_tr2_edge, kaonp_rich_tr3_edge, kaonp_rich_tr4_edge;
     double proton_spin, kaonp_sintheta, kaonp_sintheta2;
+    double kaonp_t;
     double C_LSA_TSA;
     double bin_Q2[][2] = {{1,3}, {3, 5}, {5, 7}, {7,11}};
     vector<vector<array<double,2>>> binning_xB_for_Q2 = {
@@ -520,10 +634,41 @@ void rgc_analysis() {
         {{0.2, 0.5}, {0.5, 0.6}, {0.6, 0.7}, {0.7, 1.0}}
     };
 
-    string inputDir = "fall22_NH3_data_new";
-    vector<string> rootFiles = {"fall22_NH3_data_new", "sum22_NH3_data"};
+    double bin_Pt_4D[][2] = {{0, 0.2}, {0.2, 0.4}, {0.4, 0.6}, {0.6, 1.4}};
+    vector<vector<array<double,2>>> binning_z_for_Pt_4D = {
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}}
+    };
 
-    TTree treeKaonP("Kaon+", "");
+    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.4},{0.4,0.5},{0.5, 0.60},{0.60, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,2}, {2,3}},                  
+        {{1,2}, {2,3}, {3,4}},           
+        {{1,2.5}, {2.5,4}, {4,5.5}},     
+        {{1.5,3}, {3,4.5}, {4.5,6.5}},       
+        {{2,4}, {4,6}, {6,8}},         
+        {{2.5,6}, {6,10}},                
+        {{4,7},{7,11}}                         
+    };
+    
+    double bin_xB_last[][2] = {{0.075, 0.225},{0.225, 0.4},{0.4, 0.80}};
+    // {{1,1.75}, {1.75,2}, {2,2.25}, {2.25,2.5}, {2.5,2.75}, {2.75, 3.75}},
+    // {{1,1.75}, {1.75, 2.25}, {2.25,2.75}, {2.75, 3.75}},
+    vector<vector<array<double,2>>> binning_Q2_for_xB_last = {
+        {{1,1.75}, {1.75,2}, {2,2.25}, {2.25,2.5}, {2.5,2.75}, {2.75, 3.75}},                         
+        {{1.25,2}, {2,2.75}, {2.75,3.5}, {3.5,4.25}, {4.25,5}, {5, 6.5}},                                 
+        {{1.75,3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 11}}                                 
+    };
+
+
+
+
+    string inputDir = string(period) + "_" + string(target) + "_data";
+    //string inputDir = "fall22_NH3_data";
+    //vector<string> rootFiles = {"fall22_NH3_data_new", "fall22_NH3_data"};
+
     TChain chainKaonP("Kaon+");
     int fileCount = 0;
     
@@ -535,8 +680,7 @@ void rgc_analysis() {
             fileCount++;
         }
     }
-    
-   /*
+    /*
     for (const auto& dir : rootFiles) {
 
         if (!fs::exists(dir)) {
@@ -553,22 +697,146 @@ void rgc_analysis() {
             }
         }
     }
-        */
+    */
     if (fileCount == 0) {
-        cerr << "Nessun file .root trovato in " << inputDir << endl;
+        cerr << "Nessun file .root trovato nelle directory di input" << endl;
         return;
     }
     // creo un output root 
-    const char* outputFile = "plot_rgc_fall22_kaonp.root"; 
+    TString outputFile = Form("plot_%s_4D_rgc_%s_kaonp.root", target, period);
     double torus = -1;
+    TString csv_filename = Form("RECO_CSV/output_RGC_%s_asymmetries_4D_%s.csv", target, period);
+    std::ofstream csvFile(csv_filename.Data());
+    csvFile << "bin_xB, bin_zPt, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, AUU_cosPhi, AUU_cosPhi_err, AUU_cos2Phi, AUU_cos2Phi_err, ALU_sinPhi, ALU_sinPhi_err\n";
+    //std::ofstream csvFile_xQ2(csv_filename_xQ2.Data());
+    //csvFile_xQ2 << "bin_xQ2, mean_xB, mean_Q2 , mean_z, mean_PhT, epsilon, AUL_sinPhi, AUL_sinPhi_err, AUL_sin2Phi, AUL_sin2Phi_err, ALL, ALL_err, ALL_cosPhi, ALL_cosPhi_err, AUU_cosPhi, AUU_cosPhi_err, AUU_cos2Phi, AUU_cos2Phi_err, ALU_sinPhi, ALU_sinPhi_err, cov_ALU_AUL_sinPhi, cov_ALL_cosPhi_AUL_sinPhi, cov_AUU_cosPhi_ALL_cosPhi, cov_AUU_cosPhi_ALU_sinPhi, cov_AUU_cosPhi_AUL_sinPhi, cov_ALL_cosPhi_ALU_sinPhi, cov_AUU_cos2Phi_AUL_sin2Phi\n";
 
-    TFile outFile(outputFile, "RECREATE");  // File di output ROOT
+    TFile outFile(outputFile.Data(), "RECREATE");  // File di output ROOT
+    TTree treeKaonP("Kaon+", "");
 
     TDirectory* dir_xQ2 = outFile.mkdir("Binning xB-Q2");
     TDirectory* dir_zPt = outFile.mkdir("Binning z-Pt");
     TDirectory* dir_aul_sin = outFile.mkdir("AUL sin(Phi)");
     TDirectory* dir_aul_2sin = outFile.mkdir("AUL sin(2Phi)");
+    TDirectory* dir_all_0 = outFile.mkdir("ALL");
+    TDirectory* dir_all_cos = outFile.mkdir("ALL cos(Phi)");
+    TDirectory* dir_alu_sin = outFile.mkdir("ALU sin(Phi)");
     TDirectory* dir_error = outFile.mkdir("Error");
+
+    // To save all the variables
+    // Kaon +
+    //chainKaonP.SetBranchAddress("E", &kaonp_E);
+    chainKaonP.SetBranchAddress("el_px", &electron_px);
+    chainKaonP.SetBranchAddress("el_py", &electron_py);
+    chainKaonP.SetBranchAddress("el_pz", &electron_pz);
+    chainKaonP.SetBranchAddress("el_mom", &electron_mom);
+    chainKaonP.SetBranchAddress("el_theta", &electron_Theta);
+    chainKaonP.SetBranchAddress("el_phi", &electron_Phi);
+    chainKaonP.SetBranchAddress("el_W", &electron_W);
+    chainKaonP.SetBranchAddress("el_vz", &electron_vz);
+    chainKaonP.SetBranchAddress("kaon_px", &kaonp_px);
+    chainKaonP.SetBranchAddress("kaon_py", &kaonp_py);
+    chainKaonP.SetBranchAddress("kaon_pz", &kaonp_pz);
+    chainKaonP.SetBranchAddress("kaon_vz", &kaonp_vz);
+    chainKaonP.SetBranchAddress("kaon_mom", &kaonp_Ph);
+    chainKaonP.SetBranchAddress("beta", &kaonp_beta);
+    chainKaonP.SetBranchAddress("Polarization", &kaonp_Pol);
+    chainKaonP.SetBranchAddress("Helicity", &helicity);
+    chainKaonP.SetBranchAddress("gamma", &kaonp_gamma);
+    chainKaonP.SetBranchAddress("epsilon", &kaonp_epsilon);
+    chainKaonP.SetBranchAddress("W", &kaonp_W);
+    chainKaonP.SetBranchAddress("Q2", &kaonp_Q2);
+    chainKaonP.SetBranchAddress("xF_new", &kaonp_xF);
+    chainKaonP.SetBranchAddress("xB", &kaonp_xB);
+    chainKaonP.SetBranchAddress("y", &kaonp_y);
+    chainKaonP.SetBranchAddress("z", &kaonp_z);
+    chainKaonP.SetBranchAddress("kaon_Pt", &kaonp_PhT);
+    chainKaonP.SetBranchAddress("Pt_over_zQ", &kaonp_Pt_zQ);
+    chainKaonP.SetBranchAddress("kaon_phi_lab", &kaonp_Phi);
+    chainKaonP.SetBranchAddress("kaon_theta", &kaonp_Theta);
+    chainKaonP.SetBranchAddress("eta", &kaonp_eta);
+    chainKaonP.SetBranchAddress("kaon_phi_h", &kaonp_Phi_h);
+    chainKaonP.SetBranchAddress("Mx", &kaonp_Mx);
+    chainKaonP.SetBranchAddress("clas_chi2", &kaonp_chi2pid);
+    chainKaonP.SetBranchAddress("clas_pid", &kaonp_track_pid);
+    chainKaonP.SetBranchAddress("Rich_Id", &kaonp_rich_id);
+    chainKaonP.SetBranchAddress("Rich_PID", &kaonp_rich_pid); // PID_rich == 321 e RQ > 0.1 con 1.2<P<8 GeV sono i tagli da richiedere per il rich
+    chainKaonP.SetBranchAddress("Rich_RQ", &kaonp_rich_RQ);   // PID_rich != 321 con 1.2<P<3 GeV + HadronPID_Chi2Pid + KinematicPID_Vertex per event builder
+    chainKaonP.SetBranchAddress("Rich_mass", &kaonp_bestMass);
+    chainKaonP.SetBranchAddress("Rich_RL", &kaonp_rich_RL);
+    chainKaonP.SetBranchAddress("Rich_nTot", &kaonp_rich_nTot);
+    chainKaonP.SetBranchAddress("Rich_ch", &kaonp_rich_ch);
+    chainKaonP.SetBranchAddress("Rich_chi2", &kaonp_rich_chi2);
+    chainKaonP.SetBranchAddress("Rich_Mchi2", &kaonp_rich_Mchi2);
+    chainKaonP.SetBranchAddress("Rich_PMT_edge", &kaonp_rich_tr1_edge);
+    chainKaonP.SetBranchAddress("Rich_PMT_x", &kaonp_rich_tr1_x);
+    chainKaonP.SetBranchAddress("Rich_PMT_y", &kaonp_rich_tr1_y);
+    chainKaonP.SetBranchAddress("Rich_aerogel1_edge", &kaonp_rich_tr2_edge);
+    chainKaonP.SetBranchAddress("Rich_aerogel1_x", &kaonp_rich_tr2_x);
+    chainKaonP.SetBranchAddress("Rich_aerogel1_y", &kaonp_rich_tr2_y);
+    chainKaonP.SetBranchAddress("Rich_aerogel2_edge", &kaonp_rich_tr3_edge);
+    chainKaonP.SetBranchAddress("Rich_aerogel2_x", &kaonp_rich_tr3_x);
+    chainKaonP.SetBranchAddress("Rich_aerogel2_y", &kaonp_rich_tr3_y);
+    chainKaonP.SetBranchAddress("Rich_aerogel3_edge", &kaonp_rich_tr4_edge);
+    chainKaonP.SetBranchAddress("Rich_aerogel3_x", &kaonp_rich_tr4_x);
+    chainKaonP.SetBranchAddress("Rich_aerogel3_y", &kaonp_rich_tr4_y);
+    // tree
+    // Kaon +
+    treeKaonP.Branch("el_px", &electron_px, "el_px/D");
+    treeKaonP.Branch("el_py", &electron_py, "el_py/D");
+    treeKaonP.Branch("el_pz", &electron_pz, "el_pz/D");
+    treeKaonP.Branch("el_mom", &electron_mom, "el_mom/D");
+    treeKaonP.Branch("el_theta", &electron_Theta, "el_theta/D");
+    treeKaonP.Branch("el_phi", &electron_Phi, "el_phi/D");
+    treeKaonP.Branch("el_W", &electron_W, "el_W/D");
+    treeKaonP.Branch("kaon_px", &kaonp_px, "kaon_px/D");
+    treeKaonP.Branch("kaon_py", &kaonp_py, "kaon_py/D");
+    treeKaonP.Branch("kaon_pz", &kaonp_pz, "kaon_pz/D");
+    treeKaonP.Branch("kaon_mom", &kaonp_Ph, "kaon_mom/D");
+    treeKaonP.Branch("Polarization", &kaonp_Pol, "Polarization/D");
+    treeKaonP.Branch("Helicity", &helicity, "Helicity/D");
+    treeKaonP.Branch("spin", &proton_spin, "spin/D");
+    treeKaonP.Branch("beta", &kaonp_beta, "beta/D"); 
+    treeKaonP.Branch("gamma", &kaonp_gamma, "gamma/D");
+    treeKaonP.Branch("epsilon", &kaonp_epsilon, "epsilon/D");
+    treeKaonP.Branch("sintheta", &kaonp_sintheta, "sintheta/D");
+    treeKaonP.Branch("C_LSA_TSA", &C_LSA_TSA, "C_LSA_TSA/D");
+    treeKaonP.Branch("W", &kaonp_W, "W/D");
+    treeKaonP.Branch("Q2", &kaonp_Q2, "Q2/D");
+    treeKaonP.Branch("xF", &kaonp_xF, "xF/D");
+    treeKaonP.Branch("xB", &kaonp_xB, "xB/D");
+    treeKaonP.Branch("y", &kaonp_y, "y/D");
+    treeKaonP.Branch("z", &kaonp_z, "z/D");
+    treeKaonP.Branch("kaon_Pt", &kaonp_PhT, "kaon_Pt/D");
+    treeKaonP.Branch("Pt_over_zQ", &kaonp_Pt_zQ, "Pt_over_zQ/D");
+    treeKaonP.Branch("kaon_phi_lab", &kaonp_Phi, "kaon_phi_lab/D");
+    treeKaonP.Branch("kaon_theta", &kaonp_Theta, "kaon_theta/D");
+    treeKaonP.Branch("eta", &kaonp_eta, "eta/D");
+    treeKaonP.Branch("kaon_phi_h", &kaonp_Phi_h, "kaon_phi_h/D");
+    treeKaonP.Branch("Mx", &kaonp_Mx, "Mx/D");
+    treeKaonP.Branch("clas_chi2", &kaonp_chi2pid, "clas_chi2/D");
+    treeKaonP.Branch("clas_pid", &kaonp_track_pid, "clas_pid/D");
+    treeKaonP.Branch("Rich_Id", &kaonp_rich_id, "Rich_Id/D");
+    treeKaonP.Branch("Rich_PID", &kaonp_rich_pid, "Rich_PID/D");
+    treeKaonP.Branch("Rich_RQ", &kaonp_rich_RQ, "Rich_RQ/D");
+    treeKaonP.Branch("Rich_mass", &kaonp_bestMass, "Rich_mass/D");
+    treeKaonP.Branch("Rich_RL", &kaonp_rich_RL, "Rich_RL/D");
+    treeKaonP.Branch("Rich_nTot", &kaonp_rich_nTot, "Rich_nTot/D");
+    treeKaonP.Branch("Rich_ch", &kaonp_rich_ch, "Rich_ch/D");
+    treeKaonP.Branch("Rich_chi2", &kaonp_rich_chi2, "Rich_chi2/D");
+    treeKaonP.Branch("Rich_Mchi2", &kaonp_rich_Mchi2, "Rich_Mchi2/D");
+    treeKaonP.Branch("Rich_PMT_edge", &kaonp_rich_tr1_edge, "Rich_PMT_edge/D");
+    treeKaonP.Branch("Rich_PMT_x", &kaonp_rich_tr1_x, "Rich_PMT_x/D");
+    treeKaonP.Branch("Rich_PMT_y", &kaonp_rich_tr1_y, "Rich_PMT_y/D");
+    treeKaonP.Branch("Rich_aerogel1_edge", &kaonp_rich_tr2_edge, "Rich_aerogel1_edge/D");
+    treeKaonP.Branch("Rich_aerogel1_x", &kaonp_rich_tr2_x, "Rich_aerogel1_x/D");
+    treeKaonP.Branch("Rich_aerogel1_y", &kaonp_rich_tr2_y, "Rich_aerogel1_y/D");
+    treeKaonP.Branch("Rich_aerogel2_edge", &kaonp_rich_tr3_edge, "Rich_aerogel2_edge/D");
+    treeKaonP.Branch("Rich_aerogel2_x", &kaonp_rich_tr3_x, "Rich_aerogel2_x/D");
+    treeKaonP.Branch("Rich_aerogel2_y", &kaonp_rich_tr3_y, "Rich_aerogel2_y/D");
+    treeKaonP.Branch("Rich_aerogel3_edge", &kaonp_rich_tr4_edge, "Rich_aerogel3_edge/D");
+    treeKaonP.Branch("Rich_aerogel3_x", &kaonp_rich_tr4_x, "Rich_aerogel3_x/D");
+    treeKaonP.Branch("Rich_aerogel3_y", &kaonp_rich_tr4_y, "Rich_aerogel3_y/D");
 
     // To save all the variables
     // Kaon +
@@ -760,7 +1028,7 @@ void rgc_analysis() {
     // multidim
 
     double nbin_xQ2 = 14;
-    double nbin_zPt = 25;
+    double nbin_zPt = 16;
     vector<TH2D*> hist_xBvsQ2_binned(nbin_xQ2);
     vector<TH2D*> hist_zvsPt_binned(nbin_zPt);
     vector<vector<double>> vec_kaonp_phih_2d(nbin_xQ2);
@@ -797,10 +1065,28 @@ void rgc_analysis() {
     vector<double> AUL_sin_err_2d(nbin_xQ2);
     vector<double> AUL_2sin_2d(nbin_xQ2);
     vector<double> AUL_2sin_err_2d(nbin_xQ2);
+    //
     vector<vector<double>> AUL_sin_4d(nbin_xQ2, vector<double> (nbin_zPt));
     vector<vector<double>> AUL_sin_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
     vector<vector<double>> AUL_2sin_4d(nbin_xQ2, vector<double> (nbin_zPt));
     vector<vector<double>> AUL_2sin_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    // LL
+    vector<vector<double>> ALL_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> ALL_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> ALL_cos_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> ALL_cos_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    // LU
+    vector<vector<double>> ALU_sin_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> ALU_sin_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    // UU
+    vector<vector<double>> AUU_cos_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> AUU_cos_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> AUU_cos2_4d(nbin_xQ2, vector<double> (nbin_zPt));
+    vector<vector<double>> AUU_cos2_err_4d(nbin_xQ2, vector<double> (nbin_zPt));
+
+
+
+    //
     // TSA
     vector<double> AUL_gamma_sin_2d(nbin_xQ2);
     vector<double> AUL_gamma_sin_err_2d(nbin_xQ2);
@@ -815,6 +1101,9 @@ void rgc_analysis() {
     vector<double> Corr_2sin_2d(nbin_xQ2);
     vector<vector<double>> Corr_sin_4d(nbin_xQ2, vector<double> (nbin_zPt));
     vector<vector<double>> Corr_2sin_4d(nbin_xQ2, vector<double> (nbin_zPt));
+
+    vector<double> vec_dilution_xQ2(nbin_xQ2);
+    vector<double> vec_dilution_zPt(nbin_zPt);
 
 
     for(int i = 0; i < nbin_xQ2; i++){
@@ -862,7 +1151,8 @@ void rgc_analysis() {
                 double beta2 = kaonp_beta*kaonp_beta;
                 kaonp_m = sqrt((ph2)*(1-beta2)/beta2);
                 double index_xQ2 = getBinIndex_xQ2(kaonp_xB, kaonp_Q2); 
-                double index_zPt = getBinIndex_zPt(kaonp_z, kaonp_PhT);
+                //double index_xQ2 = getBinIndex_xQ2_4D(kaonp_xB, kaonp_Q2);
+                double index_zPt = getBinIndex_zPt_4D(kaonp_z, kaonp_PhT);
                 proton_spin = +1;
                 if(kaonp_Pol < 0) proton_spin = -1;
                 kaonp_sintheta = kaonp_gamma*sqrt((1-kaonp_y-0.25*kaonp_y*kaonp_y*kaonp_gamma*kaonp_gamma)/(1+kaonp_y*kaonp_y));
@@ -1157,81 +1447,75 @@ void rgc_analysis() {
     for(int i = 0; i < nbin_zPt; i++) hist_zvsPt_binned[i]->Write();
 
 
+    // DILUTION FACTOR
+    for (int i = 0; i < nbin_xQ2; i++) {
+        vec_dilution_xQ2[i] = getDilutionFactor(period, 1, i + 1);
+    }
+    for (int i = 0; i < nbin_zPt; i++) {
+        vec_dilution_zPt[i] = getDilutionFactor(period, 2, i + 1);
+    }
+
+    // AUU AMPLITUDE
+    //const auto mc_AUU_xQ2 = load_AUU_moments(Form("RECO_CSV/table_RGC_MC_%s_AUU_xQ2.csv", period),nbin_xQ2);
+    //const auto mc_AUU_zPt = load_AUU_moments(Form("RECO_CSV/table_RGC_MC_%s_AUU_zPt.csv", period),nbin_zPt);
+    const auto mc_AUU_4D = load_AUU_moments_4D(Form("RECO_CSV/table_RGC_MC_%s_AUU_4D_old.csv", period),nbin_xQ2, nbin_zPt);
 
 
     // ASYMMETRIES
     for (int x = 0; x < nbin_xQ2; x++){ 
-        ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
-        //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_kaonp_sintheta_2d[x], false);}, 2);
-        ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_helicity_2d[x], vec_kaonp_sintheta_2d[x], true);}, 7);
-        minimizer.SetFunction(MLE);
-        minimizer.SetMaxFunctionCalls(10000);
-        minimizer.SetMaxIterations(10000);
-        minimizer.SetTolerance(0.005);
-        minimizer.SetVariable(0, "Aul_sin", 0.00, 0.001); 
-        minimizer.SetVariable(1, "Aul_2sin", 0.00, 0.001);
-        minimizer.SetLimitedVariable(2, "All", 0.00, 0.001, -0.5, 0.5); 
-        minimizer.SetLimitedVariable(3, "All_cos", 0.00, 0.001, -0.5, 0.5);
-        minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.001, -1, 1);
-        minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.001, -1, 1);
-        minimizer.SetLimitedVariable(6, "Alu", 0.00, 0.001, -1, 1);
-        //minimizer.SetLimitedVariable(7, "Aul_3sin", 0.00, 0.000, -1, 1);
-        //minimizer.SetLimitedVariable(8, "All_cos2", 0.00, 0.000, -0.03, 0.03);
-        minimizer.Minimize();
-        // LSA
-        AUL_sin_2d[x] = minimizer.X()[0];
-        AUL_sin_err_2d[x] = minimizer.Errors()[0];
-        AUL_2sin_2d[x] = minimizer.X()[1];
-        AUL_2sin_err_2d[x] = minimizer.Errors()[1];
-        cout <<  "    All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
-        // TSA
-        // mean value
-        double sum_sint = 0, sum_eps = 0;
-        for (double val_sint : vec_kaonp_sintheta_2d[x]) sum_sint += val_sint;
-        double mean_sint = sum_sint / vec_kaonp_sintheta_2d[x].size();
-        for (double val_eps : vec_kaonp_eps_2d[x]) sum_eps += val_eps;
-        double mean_eps = sum_eps / vec_kaonp_eps_2d[x].size();
-        // correction
-        double C_UL2 = mean_sint * (sqrt(2*mean_eps*(1+mean_eps))/mean_eps);
-        double C_UL1 = mean_sint * 1/(sqrt(2*mean_eps*(1+mean_eps)));
-        double Aut_2d = (hist_xBvsQ2_binned[x]->GetMean(1)*hist_xBvsQ2_binned[x]->GetMean(1)*hist_xBvsQ2_binned[x]->GetMean(1)*hist_xBvsQ2_binned[x]->GetMean(1))/4;
-        double correction_1_2d = Aut_2d*C_UL1;
-        double correction_2_2d = Aut_2d*C_UL2;
-        Corr_sin_2d[x] =  correction_1_2d;
-        Corr_2sin_2d[x] =  correction_2_2d;
-        //double C_LL2 = mean_sint * (sqrt(2*mean_eps*(1-mean_eps))/sqrt(1-mean_eps*mean_eps));
-        //double C_LL1 = mean_sint * sqrt(1-mean_eps*mean_eps)/(sqrt(2*mean_eps*(1-mean_eps)));
-        // effective
-        AUL_gamma_sin_2d[x] = minimizer.X()[0] + 0;
-        AUL_gamma_sin_err_2d[x] = minimizer.Errors()[0];
-        AUL_gamma_2sin_2d[x] = minimizer.X()[1] + 0;
-        AUL_gamma_2sin_err_2d[x] = minimizer.Errors()[1];
-    }
-    cout << " -------------------------------------------------------------------------------------------------------------------------------------------- " << endl;
-    for (int x = 0; x < nbin_xQ2; x++){ 
         for(int z = 0; z < nbin_zPt; z++){
             ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
-            //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_4d[x][z], vec_kaonp_spin_4d[x][z], vec_kaonp_eps_4d[x][z], vec_kaonp_pol_4d[x][z], vec_kaonp_sintheta_4d[x][z], false);}, 2);
-            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_4d[x][z], vec_kaonp_spin_4d[x][z], vec_kaonp_eps_4d[x][z], vec_kaonp_pol_4d[x][z], vec_helicity_4d[x][z], vec_kaonp_sintheta_4d[x][z], true);}, 7);
+            double dilution = (vec_dilution_xQ2[x]+vec_dilution_zPt[z])/2;
+            double index = x * nbin_zPt + z;
+            double mean_cos1 = mc_AUU_4D.mean_cos1[index];
+            double mean_cos2 = mc_AUU_4D.mean_cos2[index];
+            if (!std::isfinite(mean_cos1) || !std::isfinite(mean_cos2)) continue; // no MC info
+            ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike_withLL(p, vec_kaonp_phih_4d[x][z], vec_kaonp_spin_4d[x][z], vec_kaonp_y_4d[x][z],vec_kaonp_eps_4d[x][z], vec_kaonp_pol_4d[x][z], vec_helicity_4d[x][z], vec_kaonp_sintheta_4d[x][z], dilution, mean_cos1, mean_cos2,true, target, period);}, 7);
             minimizer.SetFunction(MLE);
             minimizer.SetMaxFunctionCalls(10000);
             minimizer.SetMaxIterations(10000);
-            minimizer.SetTolerance(0.005);
-            minimizer.SetVariable(0, "Aul_sin", 0.00, 0.001); 
-            minimizer.SetVariable(1, "Aul_2sin", 0.00, 0.001);
-            minimizer.SetLimitedVariable(2, "All", 0.00, 0.001, -0.5, 0.5); 
-            minimizer.SetLimitedVariable(3, "All_cos", 0.00, 0.001, -0.5, 0.5);
-            minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.001, -1, 1);
-            minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.001, -1, 1);
-            minimizer.SetLimitedVariable(6, "Alu", 0.00, 0.001, -1, 1);
-            //minimizer.SetLimitedVariable(7, "Aul_3sin", 0.00, 0.000, -1, 1);
-            //minimizer.SetLimitedVariable(8, "All_cos2", 0.00, 0.000, -0.03, 0.03);
-            minimizer.Minimize();
+            minimizer.SetTolerance(0.001);
+            minimizer.SetLimitedVariable(0, "Aul_sin", 0.00, 0.001, -0.8, 0.8); 
+            minimizer.SetLimitedVariable(1, "Aul_2sin", 0.00, 0.001, -0.8, 0.8);
+            minimizer.SetLimitedVariable(2, "All", 0.00, 0.001, -0.8, 0.8); 
+            minimizer.SetLimitedVariable(3, "All_cos", 0.00, 0.001, -0.8, 0.8);
+            minimizer.SetLimitedVariable(4, "Auu", 0.00, 0.001, -0.8, 0.8);
+            minimizer.SetLimitedVariable(5, "Auu2", 0.00, 0.001, -0.8, 0.8);
+            minimizer.SetLimitedVariable(6, "Alu", 0.00, 0.001, -0.8, 0.8);
+            //minimizer.Minimize();
+            minimizer.SetStrategy(2);
+            minimizer.SetErrorDef(0.5);
+            const bool fit_ok = minimizer.Minimize();
+            const int fit_status = minimizer.Status();
+
+            // Ricalcola la matrice degli errori al minimo.
+            const bool hesse_ok = fit_ok && minimizer.Hesse();
+            const int cov_status = minimizer.CovMatrixStatus();
+            std::cout << "EDM = " << minimizer.Edm()
+            << "  NCalls = " << minimizer.NCalls()
+            << std::endl;
+
+            std::cout
+                << "bin: " << x
+                << " fit status: " << fit_status
+                << " covariance status: " << cov_status
+                << std::endl;
             // LSA
             AUL_sin_4d[x][z] = minimizer.X()[0];
             AUL_sin_err_4d[x][z] = minimizer.Errors()[0];
             AUL_2sin_4d[x][z] = minimizer.X()[1];
             AUL_2sin_err_4d[x][z] = minimizer.Errors()[1];
+            ALL_4d[x][z] = minimizer.X()[2];
+            ALL_err_4d[x][z] = minimizer.Errors()[2];
+            ALL_cos_4d[x][z] = minimizer.X()[3];
+            ALL_cos_err_4d[x][z] = minimizer.Errors()[3];
+            AUU_cos_4d[x][z] = minimizer.X()[4];
+            AUU_cos_err_4d[x][z] = minimizer.Errors()[4];
+            AUU_cos2_4d[x][z] = minimizer.X()[5];
+            AUU_cos2_err_4d[x][z] = minimizer.Errors()[5];
+            ALU_sin_4d[x][z] = minimizer.X()[6];
+            ALU_sin_err_4d[x][z] = minimizer.Errors()[6];
+
             int status = minimizer.Status();
             if (status != 0) {
                 cout << "BAD FIT at x=" << x << " z=" << z
@@ -1239,7 +1523,7 @@ void rgc_analysis() {
                     << "  N=" << vec_kaonp_phih_4d[x][z].size()
                     << endl;
             }
-            cout <<  "    All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
+            cout << "bin: (" << x << ", " << z << ")" << "  -->   All = " << minimizer.X()[2] << "    All_cos = " << minimizer.X()[3]  << "    Auu_cos = " << minimizer.X()[4] << "    Auu_cos2 = " << minimizer.X()[5] <<  "    Alu_sin = " << minimizer.X()[6] << endl;
             // TSA
             // mean value
             double sum_sint = 0, sum_eps = 0, sum_xB = 0;
@@ -1250,6 +1534,7 @@ void rgc_analysis() {
             for (double val_xB : vec_kaonp_xB_4d[x][z]) sum_xB += val_xB;
             double mean_xB = sum_xB / vec_kaonp_xB_4d[x][z].size();
             // correction
+            /*
             double C_UL1 = mean_sint * (sqrt(2*mean_eps*(1+mean_eps))/mean_eps);
             double C_UL2 = mean_sint * mean_eps/(sqrt(2*mean_eps*(1+mean_eps)));
             double Aut_4d = (mean_xB*mean_xB*mean_xB*mean_xB)/4;
@@ -1305,7 +1590,7 @@ void rgc_analysis() {
                     hist_AUL_sin2_xQ2_zPt[x]->SetBinContent(7, 4, AUL_gamma_2sin_err_4d[x][z]);
                 }
             }
-
+            */
             hist_AUL_sin2_xQ2_zPt[x]->SetMinimum(0);
             hist_AUL_sin2_xQ2_zPt[x]->SetMaximum(0.05);
             hist_AUL_sin_xQ2_zPt[x]->SetMinimum(0);
@@ -1372,94 +1657,6 @@ void rgc_analysis() {
     //
 
     dir_aul_sin->cd();
-    // Q2 color scale vs xB 2D
-    TGraphErrors* graph2D_AUL_vs_xB = new TGraphErrors();
-    TGraphErrors* graph2D_AUL_vs_xB_1 = new TGraphErrors();
-    TGraphErrors* graph2D_AUL_vs_xB_2 = new TGraphErrors();
-    TGraphErrors* graph2D_AUL_vs_xB_3 = new TGraphErrors();
-    TGraphErrors* graph2D_AUL_vs_xB_4 = new TGraphErrors();
-    TGraphErrors* graph2D_corr_sin = new TGraphErrors();
-    int p_idx1 = 0, p_idx1_1 = 0, p_idx1_2 = 0, p_idx1_3 = 0, p_idx1_4 = 0;
-    for(int x = 0; x < nbin_xQ2; x++){
-        if (vec_kaonp_xB_2d[x].empty()) continue; // Skip empty bins
-        if (vec_kaonp_z_2d[x].empty()) continue;
-        // Compute mean xB for this bin
-        double sum_xB = 0.0;
-        double min_x = 1;
-        double max_x = 0;
-        double sum_eps = 0;
-        //for (double valeps : vec_kaonp_eps_2d[x]) sum_eps += valeps;
-        //double mean_eps = sum_eps / vec_kaonp_eps_2d[x].size();
-        for (double val : vec_kaonp_xB_2d[x]){
-            sum_xB += val;
-            if(val > max_x) max_x = val;
-            if(val < min_x) min_x = val;
-        }
-        double mean_xB = sum_xB / vec_kaonp_xB_2d[x].size();
-        // Get AUL and error from vectors
-        //double D = sqrt(2*mean_eps*(1+mean_eps));
-        double aul_sin = AUL_gamma_sin_2d[x];
-        double aul_sin_err = AUL_gamma_sin_err_2d[x];
-        //double aul_sin = 0;
-        //if(aul_sin > 1 || aul_sin < -1) continue;
-        graph2D_AUL_vs_xB->SetPoint(p_idx1, mean_xB, aul_sin);
-        graph2D_AUL_vs_xB->SetPointError(p_idx1, 0.0, aul_sin_err); // No x error
-        graph2D_corr_sin->SetPoint(p_idx1, mean_xB, Corr_sin_2d[x]);
-        p_idx1++;
-        if(x < 5){
-            graph2D_AUL_vs_xB_1->SetPoint(p_idx1_1, mean_xB, aul_sin);
-            graph2D_AUL_vs_xB_1->SetPointError(p_idx1_1, 0.0, aul_sin_err); // No x error
-            p_idx1_1++;
-        } else if (x < 10){
-            graph2D_AUL_vs_xB_2->SetPoint(p_idx1_2, mean_xB, aul_sin);
-            graph2D_AUL_vs_xB_2->SetPointError(p_idx1_2, 0.0, aul_sin_err);
-            p_idx1_2++;
-        } else if (x < 12){
-            graph2D_AUL_vs_xB_3->SetPoint(p_idx1_3, mean_xB, aul_sin);
-            graph2D_AUL_vs_xB_3->SetPointError(p_idx1_3, 0.0, aul_sin_err);
-            p_idx1_3++;
-        } else if (x < 18){
-            graph2D_AUL_vs_xB_4->SetPoint(p_idx1_4, mean_xB, aul_sin);
-            graph2D_AUL_vs_xB_4->SetPointError(p_idx1_4, 0.0, aul_sin_err);
-            p_idx1_4++;
-        }
-    }
-    graph2D_AUL_vs_xB_1->SetMarkerStyle(20), graph2D_AUL_vs_xB_2->SetMarkerStyle(20), graph2D_AUL_vs_xB_3->SetMarkerStyle(20), graph2D_AUL_vs_xB_4->SetMarkerStyle(20);
-    graph2D_AUL_vs_xB_1->SetLineColor(kAzure-5), graph2D_AUL_vs_xB_1->SetMarkerColor(kAzure-5);
-    graph2D_AUL_vs_xB_2->SetLineColor(kViolet-5), graph2D_AUL_vs_xB_2->SetMarkerColor(kViolet-5);
-    graph2D_AUL_vs_xB_3->SetLineColor(kPink-5), graph2D_AUL_vs_xB_3->SetMarkerColor(kPink-5);
-    graph2D_AUL_vs_xB_4->SetLineColor(kOrange-5), graph2D_AUL_vs_xB_4->SetMarkerColor(kOrange-5);
-    graph2D_corr_sin->SetMarkerStyle(26);
-    graph2D_corr_sin->SetMarkerColor(kRed);
-
-
-    TCanvas* c_Aut2D_xB_2 = new TCanvas("Aul_sin_vs_xB_2d", "sin(#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
-    //graph2D_AUL_vs_xB->Draw("A");
-    TMultiGraph *mg_Aut2D_xB_2 = new TMultiGraph();
-    mg_Aut2D_xB_2->SetTitle("A_{UL}^{sin#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin); x_{B}; A_{UL}^{sin(#Phi_{h})}");
-    mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_1, "P");
-    mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_2, "P");
-    mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_3, "P");
-    mg_Aut2D_xB_2->Add(graph2D_AUL_vs_xB_4, "P");
-    mg_Aut2D_xB_2->Add(graph2D_corr_sin, "P");
-    mg_Aut2D_xB_2->Draw("A");
-    //mg_Aut2D_xB_2->GetYaxis()->SetRangeUser(-0.05, 0.05);
-    TLine* guideLine11 = new TLine(mg_Aut2D_xB_2->GetXaxis()->GetXmin(), 0, mg_Aut2D_xB_2->GetXaxis()->GetXmax(), 0);
-    guideLine11->SetLineStyle(2);  
-    guideLine11->SetLineColor(kGray+1);
-    guideLine11->Draw();
-
-    TLegend* legend = new TLegend(0.13, 0.7, 0.33, 0.88); // Adjust position (x1,y1,x2,y2)
-    legend->AddEntry(graph2D_AUL_vs_xB_1, "1 < Q^{2} [GeV^{2}] < 3", "ep");
-    legend->AddEntry(graph2D_AUL_vs_xB_2, "3 < Q^{2} [GeV^{2}] < 5", "ep");
-    legend->AddEntry(graph2D_AUL_vs_xB_3, "5 < Q^{2} [GeV^{2}] < 7", "ep");
-    legend->AddEntry(graph2D_AUL_vs_xB_4, "7 < Q^{2} [GeV^{2}] < 11", "ep");
-    legend->AddEntry(graph2D_corr_sin, "TSA contribution", "p");
-    legend->SetFillStyle(0);  // Transparent background
-    legend->Draw();
-    c_Aut2D_xB_2->Update();
-    c_Aut2D_xB_2->Write();
-
 
     // 4D
 
@@ -1490,9 +1687,9 @@ void rgc_analysis() {
             double mean_xB = sum_xB / vec_kaonp_xB_4d[x][z].size();
             // Get AUL and error from vectors
             //double D = sqrt(2*mean_eps*(1+mean_eps));
-            double aul_sin = AUL_gamma_sin_4d[x][z];
+            double aul_sin = AUL_sin_4d[x][z];
             //double aul_sin = 0;
-            double aul_sin_err = AUL_gamma_sin_err_4d[x][z];
+            double aul_sin_err = AUL_sin_err_4d[x][z];
             if(aul_sin > 1 || aul_sin < -1) continue;
             if(aul_sin_err > 0.25) aul_sin_err = 0.25;
             graph_AUL_vs_xB->SetPoint(p_idx, mean_xB, aul_sin);
@@ -1553,93 +1750,6 @@ void rgc_analysis() {
 
 
     dir_aul_2sin->cd();
-    // Q2 color scale vs xB 2D
-    TGraphErrors* graph2D_AUL2_vs_xB = new TGraphErrors();
-    TGraphErrors* graph2D_AUL2_vs_xB_1 = new TGraphErrors();
-    TGraphErrors* graph2D_AUL2_vs_xB_2 = new TGraphErrors();
-    TGraphErrors* graph2D_AUL2_vs_xB_3 = new TGraphErrors();
-    TGraphErrors* graph2D_AUL2_vs_xB_4 = new TGraphErrors();
-    TGraphErrors* graph2D_corr_2sin = new TGraphErrors();
-    int p_idx = 0, p_idx_1 = 0, p_idx_2 = 0, p_idx_3 = 0, p_idx_4 = 0;
-    for(int x = 0; x < nbin_xQ2; x++){
-        if (vec_kaonp_xB_2d[x].empty()) continue; // Skip empty bins
-        if (vec_kaonp_z_2d[x].empty()) continue;
-        // Compute mean xB for this bin
-        double sum_xB = 0.0;
-        double min_x = 1;
-        double max_x = 0;
-        double sum_eps = 0;
-        //for (double valeps : vec_kaonp_eps_2d[x]) sum_eps += valeps;
-        //double mean_eps = sum_eps / vec_kaonp_eps_2d[x].size();
-        for (double val : vec_kaonp_xB_2d[x]){
-            sum_xB += val;
-            if(val > max_x) max_x = val;
-            if(val < min_x) min_x = val;
-        }
-        double mean_xB = sum_xB / vec_kaonp_xB_2d[x].size();
-        // Get AUL2 and error from vectors
-        //double D = sqrt(2*mean_eps*(1+mean_eps));
-        double aul_sin = AUL_gamma_2sin_2d[x];
-        //double aul_sin = 0;
-        double aul_sin_err = AUL_gamma_2sin_err_2d[x];
-        if(aul_sin > 1 || aul_sin < -1) continue;
-        graph2D_AUL2_vs_xB->SetPoint(p_idx, mean_xB, aul_sin);
-        graph2D_AUL2_vs_xB->SetPointError(p_idx, 0.0, aul_sin_err); // No x error
-        graph2D_corr_2sin->SetPoint(p_idx, mean_xB, Corr_2sin_2d[x]);
-        p_idx++;
-        if(x < 5){
-            graph2D_AUL2_vs_xB_1->SetPoint(p_idx_1, mean_xB, aul_sin);
-            graph2D_AUL2_vs_xB_1->SetPointError(p_idx_1, 0.0, aul_sin_err); // No x error
-            p_idx_1++;
-        } else if (x < 10){
-            graph2D_AUL2_vs_xB_2->SetPoint(p_idx_2, mean_xB, aul_sin);
-            graph2D_AUL2_vs_xB_2->SetPointError(p_idx_2, 0.0, aul_sin_err);
-            p_idx_2++;
-        } else if (x < 12){
-            graph2D_AUL2_vs_xB_3->SetPoint(p_idx_3, mean_xB, aul_sin);
-            graph2D_AUL2_vs_xB_3->SetPointError(p_idx_3, 0.0, aul_sin_err);
-            p_idx_3++;
-        } else if (x < 18){
-            graph2D_AUL2_vs_xB_4->SetPoint(p_idx_4, mean_xB, aul_sin);
-            graph2D_AUL2_vs_xB_4->SetPointError(p_idx_4, 0.0, aul_sin_err);
-            p_idx_4++;
-        }
-    }
-
-    graph2D_AUL2_vs_xB->SetTitle("A_{UL}^{sin2#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin); x_{B}; A_{UL}^{sin(2#Phi_{h})}"); // #sqrt{2#epsilon(1+#epsilon)}
-    graph2D_AUL2_vs_xB_1->SetMarkerStyle(20), graph2D_AUL2_vs_xB_2->SetMarkerStyle(20), graph2D_AUL2_vs_xB_3->SetMarkerStyle(20), graph2D_AUL2_vs_xB_4->SetMarkerStyle(20);
-    graph2D_AUL2_vs_xB_1->SetLineColor(kAzure-5), graph2D_AUL2_vs_xB_1->SetMarkerColor(kAzure-5);
-    graph2D_AUL2_vs_xB_2->SetLineColor(kViolet-5), graph2D_AUL2_vs_xB_2->SetMarkerColor(kViolet-5);
-    graph2D_AUL2_vs_xB_3->SetLineColor(kPink-5), graph2D_AUL2_vs_xB_3->SetMarkerColor(kPink-5);
-    graph2D_AUL2_vs_xB_4->SetLineColor(kOrange-5), graph2D_AUL2_vs_xB_4->SetMarkerColor(kOrange-5);
-    graph2D_corr_2sin->SetMarkerStyle(26);
-    graph2D_corr_2sin->SetMarkerColor(kRed);
-    
-
-
-    TCanvas* c_Aut2D2_xB_2 = new TCanvas("Aul_sin2_vs_xB_2d", "sin(2#Phi_{h}) longitudinal asymmetry vs x_{B}", 800, 600);
-    //graph2D_AUL2_vs_xB->Draw("A");
-    TMultiGraph *mg_Aut2D2_xB_2 = new TMultiGraph();
-    mg_Aut2D2_xB_2->SetTitle("A_{UL}^{sin2#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin); x_{B}; A_{UL}^{sin(2#Phi_{h})}"); // #sqrt{2#epsilon(1+#epsilon)}
-    mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_1, "P");
-    mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_2, "P");
-    mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_3, "P");
-    mg_Aut2D2_xB_2->Add(graph2D_AUL2_vs_xB_4, "P");
-    mg_Aut2D2_xB_2->Add(graph2D_corr_2sin, "P");
-    mg_Aut2D2_xB_2->Draw("A");
-    //mg_Aut2D2_xB_2->GetYaxis()->SetRangeUser(-0.05, 0.05);
-    guideLine11->Draw();
-    TLegend* legend2 = new TLegend(0.13, 0.7, 0.33, 0.88); // Adjust position (x1,y1,x2,y2)
-    legend2->AddEntry(graph2D_AUL2_vs_xB_1, "1 < Q^{2} [GeV^{2}] < 3", "ep");
-    legend2->AddEntry(graph2D_AUL2_vs_xB_2, "3 < Q^{2} [GeV^{2}] < 5", "ep");
-    legend2->AddEntry(graph2D_AUL2_vs_xB_3, "5 < Q^{2} [GeV^{2}] < 7", "ep");
-    legend2->AddEntry(graph2D_AUL2_vs_xB_4, "7 < Q^{2} [GeV^{2}] < 11", "ep");
-    legend2->AddEntry(graph2D_corr_2sin, "TSA contribution", "p");
-    legend2->SetFillStyle(0);  // Transparent background
-    legend2->Draw();
-    c_Aut2D2_xB_2->Update();
-    c_Aut2D2_xB_2->Write();
-
     // 4D
     for (int z = 0; z < nbin_zPt; z++) {
         //if(z == 0 || z == 7) continue;
@@ -1667,9 +1777,9 @@ void rgc_analysis() {
             }
             double mean_xB = sum_xB / vec_kaonp_xB_4d[x][z].size();
             // Get AUL and error from vectors
-            double aul_sin = AUL_gamma_2sin_4d[x][z];
+            double aul_sin = AUL_2sin_4d[x][z];
             //double aul_sin = 0;
-            double aul_sin_err = AUL_gamma_2sin_err_4d[x][z];
+            double aul_sin_err = AUL_2sin_err_4d[x][z];
             if(aul_sin > 1 || aul_sin < -1) continue;
             if(aul_sin_err > 0.4) aul_sin_err = 0.4;
             graph_AUL_vs_xB->SetPoint(p_idx, mean_xB, aul_sin);
@@ -1734,484 +1844,511 @@ void rgc_analysis() {
     }
 
 
-
-
-
-
-
-
-
-
-
-
-    // errors
-    dir_error->cd();
-    for(int x = 0; x < nbin_xQ2; x++){
-        TCanvas *c_bin_zPt = new TCanvas(Form("AULerr_sin_z_vs_Pt_Bin%d",x), "z vs P_{hT} bin", 800, 700);
-        hist_AUL_sin_xQ2_zPt[x]->SetStats(0);
-        hist_AUL_sin_xQ2_zPt[x]->Draw("COLZ");
-
-        vector<TPolyLine*> gridLines_zp;
-        vector<TText*> labels_zp;
-
-        int bin_index_zp = 1;
-
-        // Loop generale
-        for (int iz = 0; iz < 4; ++iz) {
-            for (size_t ip = 0; ip < binning_z_for_Pt[iz].size(); ++ip) {
-
-                double Pt[5] = {bin_Pt[iz][0], bin_Pt[iz][1], bin_Pt[iz][1], bin_Pt[iz][0], bin_Pt[iz][0]};
-                double z[5] = {binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][0]};
-
-                // Rettangolo
-                TPolyLine *rect_zp = new TPolyLine(5, z, Pt);
-                rect_zp->SetLineWidth(2);
-                rect_zp->SetLineColor(kBlack);
-                rect_zp->Draw("same");
-                gridLines_zp.push_back(rect_zp);
-
+    dir_all_0->cd();
+    // 4D
+    for (int z = 0; z < nbin_zPt; z++) {
+        //if(z == 0 || z == 7) continue;
+        TGraphErrors* graph_ALL_vs_xB = new TGraphErrors();
+        TGraphErrors* graph_ALL_vs_xB_1 = new TGraphErrors();
+        TGraphErrors* graph_ALL_vs_xB_2 = new TGraphErrors();
+        TGraphErrors* graph_ALL_vs_xB_3 = new TGraphErrors();
+        TGraphErrors* graph_ALL_vs_xB_4 = new TGraphErrors();
+        TGraphErrors* graph4D_corr_2sin = new TGraphErrors();
+        int p_idx = 0, p_idx_1 = 0, p_idx_2 = 0, p_idx_3 = 0, p_idx_4 = 0;
+        for(int x = 0; x < nbin_xQ2; x++){
+            if (vec_kaonp_xB_4d[x][z].empty()) continue; // Skip empty bins
+            if (vec_kaonp_z_4d[x][z].empty()) continue;
+            // Compute mean xB for this bin
+            double sum_eps = 0;
+            //for (double valeps : vec_kaonp_eps_4d[x][z]) sum_eps += valeps;
+            //double mean_eps = sum_eps / vec_kaonp_eps_4d[x][z].size();
+            double sum_xB = 0.0;
+            double min_x = 1;
+            double max_x = 0;
+            for (double val : vec_kaonp_xB_4d[x][z]){
+                sum_xB += val;
+                if(val > max_x) max_x = val;
+                if(val < min_x) min_x = val;
+            }
+            double mean_xB = sum_xB / vec_kaonp_xB_4d[x][z].size();
+            // Get ALL and error from vectors
+            double aul_sin = ALL_4d[x][z];
+            //double aul_sin = 0;
+            double aul_sin_err = ALL_err_4d[x][z];
+            if(aul_sin > 1 || aul_sin < -1) continue;
+            if(aul_sin_err > 0.4) aul_sin_err = 0.4;
+            graph_ALL_vs_xB->SetPoint(p_idx, mean_xB, aul_sin);
+            graph_ALL_vs_xB->SetPointError(p_idx, 0.0, aul_sin_err); // No x error
+            graph4D_corr_2sin->SetPoint(p_idx, mean_xB, Corr_2sin_4d[x][z]);
+            p_idx++;
+            if(x < 5){
+                graph_ALL_vs_xB_1->SetPoint(p_idx_1, mean_xB, aul_sin);
+                graph_ALL_vs_xB_1->SetPointError(p_idx_1, 0.0, aul_sin_err); // No x error
+                p_idx_1++;
+            } else if (x < 10){
+                graph_ALL_vs_xB_2->SetPoint(p_idx_2, mean_xB, aul_sin);
+                graph_ALL_vs_xB_2->SetPointError(p_idx_2, 0.0, aul_sin_err);
+                p_idx_2++;
+            } else if (x < 12){
+                graph_ALL_vs_xB_3->SetPoint(p_idx_3, mean_xB, aul_sin);
+                graph_ALL_vs_xB_3->SetPointError(p_idx_3, 0.0, aul_sin_err);
+                p_idx_3++;
+            } else if (x < 18){
+                graph_ALL_vs_xB_4->SetPoint(p_idx_4, mean_xB, aul_sin);
+                graph_ALL_vs_xB_4->SetPointError(p_idx_4, 0.0, aul_sin_err);
+                p_idx_4++;
             }
         }
 
-        c_bin_zPt->Update();
-        c_bin_zPt->Write();
+        graph_ALL_vs_xB->SetTitle(Form("A_{LL} vs x_{B} (x_{B}-Q^{2} bin) for bin (%d, z-P_{hT}) ; x_{B}; A_{LL}", z+1));
+        graph_ALL_vs_xB_1->SetMarkerStyle(20), graph_ALL_vs_xB_2->SetMarkerStyle(20), graph_ALL_vs_xB_3->SetMarkerStyle(20), graph_ALL_vs_xB_4->SetMarkerStyle(20);
+        graph_ALL_vs_xB_1->SetLineColor(kAzure-5);
+        graph_ALL_vs_xB_1->SetMarkerColor(kAzure-5);
+        graph_ALL_vs_xB_2->SetLineColor(kViolet-5);
+        graph_ALL_vs_xB_2->SetMarkerColor(kViolet-5);
+        graph_ALL_vs_xB_3->SetLineColor(kPink-5);
+        graph_ALL_vs_xB_3->SetMarkerColor(kPink-5);
+        graph_ALL_vs_xB_4->SetLineColor(kOrange-5);
+        graph_ALL_vs_xB_4->SetMarkerColor(kOrange-5);
+
+
+        TCanvas* c_ALL_xB_2 = new TCanvas(Form("All_vs_xB_4d_zPt_bin%d", z+1), " asymmetry vs x_{B} for bin (n, z-P_{hT})", 800, 600);
+        //graph_ALL_vs_xB->Draw("A");
+        TMultiGraph *mg_ALL4D_xB_2 = new TMultiGraph();
+        mg_ALL4D_xB_2->SetTitle(Form("A_{LL} vs x_{B} (x_{B}-Q^{2} bin) for bin (%d, z-P_{hT}) ; x_{B}; A_{LL}", z+1));
+        mg_ALL4D_xB_2->Add(graph_ALL_vs_xB_1, "P");
+        mg_ALL4D_xB_2->Add(graph_ALL_vs_xB_2, "P");
+        mg_ALL4D_xB_2->Add(graph_ALL_vs_xB_3, "P");
+        mg_ALL4D_xB_2->Add(graph_ALL_vs_xB_4, "P");
+        mg_ALL4D_xB_2->Draw("A");
+        //mg_ALL4D_xB_2->GetYaxis()->SetRangeUser(-0.1, 0.1);
+        TLine* guideLine2 = new TLine(mg_ALL4D_xB_2->GetXaxis()->GetXmin(), 0, mg_ALL4D_xB_2->GetXaxis()->GetXmax(), 0);
+        guideLine2->SetLineStyle(2);  
+        guideLine2->SetLineColor(kGray+1);
+        guideLine2->Draw();
+
+        TLegend* legend = new TLegend(0.13, 0.7, 0.35, 0.88); // Adjust position (x1,y1,x2,y2)
+        legend->AddEntry(graph_ALL_vs_xB_1, "1 < Q^{2} [GeV^{2}] < 3", "ep");
+        legend->AddEntry(graph_ALL_vs_xB_2, "3 < Q^{2} [GeV^{2}] < 5", "ep");
+        legend->AddEntry(graph_ALL_vs_xB_3, "5 < Q^{2} [GeV^{2}] < 7", "ep");
+        legend->AddEntry(graph_ALL_vs_xB_4, "7 < Q^{2} [GeV^{2}] < 11", "ep");
+        legend->SetFillStyle(0);  // Transparent background
+        legend->Draw();
+        c_ALL_xB_2->Update();
+        c_ALL_xB_2->Write();
     }
-    for(int x = 0; x < nbin_xQ2; x++){
-        TCanvas *c_bin_zPt = new TCanvas(Form("AULerr_sin2_z_vs_Pt_Bin%d",x), "z vs P_{hT} bin", 800, 700);
-        hist_AUL_sin2_xQ2_zPt[x]->SetStats(0);
-        hist_AUL_sin2_xQ2_zPt[x]->Draw("COLZ");
 
-        vector<TPolyLine*> gridLines_zp;
-        vector<TText*> labels_zp;
-
-        int bin_index_zp = 1;
-
-        // Loop generale
-        for (int iz = 0; iz < 4; ++iz) {
-            for (size_t ip = 0; ip < binning_z_for_Pt[iz].size(); ++ip) {
-
-                double Pt[5] = {bin_Pt[iz][0], bin_Pt[iz][1], bin_Pt[iz][1], bin_Pt[iz][0], bin_Pt[iz][0]};
-                double z[5] = {binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][0]};
-
-                // Rettangolo
-                TPolyLine *rect_zp = new TPolyLine(5, z, Pt);
-                rect_zp->SetLineWidth(2);
-                rect_zp->SetLineColor(kBlack);
-                rect_zp->Draw("same");
-                gridLines_zp.push_back(rect_zp);
-
+    dir_all_cos->cd();
+    // 4D
+    for (int z = 0; z < nbin_zPt; z++) {
+        //if(z == 0 || z == 7) continue;
+        TGraphErrors* graph_ALL_cos_vs_xB = new TGraphErrors();
+        TGraphErrors* graph_ALL_cos_vs_xB_1 = new TGraphErrors();
+        TGraphErrors* graph_ALL_cos_vs_xB_2 = new TGraphErrors();
+        TGraphErrors* graph_ALL_cos_vs_xB_3 = new TGraphErrors();
+        TGraphErrors* graph_ALL_cos_vs_xB_4 = new TGraphErrors();
+        TGraphErrors* graph4D_corr_2sin = new TGraphErrors();
+        int p_idx = 0, p_idx_1 = 0, p_idx_2 = 0, p_idx_3 = 0, p_idx_4 = 0;
+        for(int x = 0; x < nbin_xQ2; x++){
+            if (vec_kaonp_xB_4d[x][z].empty()) continue; // Skip empty bins
+            if (vec_kaonp_z_4d[x][z].empty()) continue;
+            // Compute mean xB for this bin
+            double sum_eps = 0;
+            //for (double valeps : vec_kaonp_eps_4d[x][z]) sum_eps += valeps;
+            //double mean_eps = sum_eps / vec_kaonp_eps_4d[x][z].size();
+            double sum_xB = 0.0;
+            double min_x = 1;
+            double max_x = 0;
+            for (double val : vec_kaonp_xB_4d[x][z]){
+                sum_xB += val;
+                if(val > max_x) max_x = val;
+                if(val < min_x) min_x = val;
+            }
+            double mean_xB = sum_xB / vec_kaonp_xB_4d[x][z].size();
+            // Get ALL_cos and error from vectors
+            double aul_sin = ALL_cos_4d[x][z];
+            //double aul_sin = 0;
+            double aul_sin_err = ALL_cos_err_4d[x][z];
+            if(aul_sin > 1 || aul_sin < -1) continue;
+            if(aul_sin_err > 0.4) aul_sin_err = 0.4;
+            graph_ALL_cos_vs_xB->SetPoint(p_idx, mean_xB, aul_sin);
+            graph_ALL_cos_vs_xB->SetPointError(p_idx, 0.0, aul_sin_err); // No x error
+            graph4D_corr_2sin->SetPoint(p_idx, mean_xB, Corr_2sin_4d[x][z]);
+            p_idx++;
+            if(x < 5){
+                graph_ALL_cos_vs_xB_1->SetPoint(p_idx_1, mean_xB, aul_sin);
+                graph_ALL_cos_vs_xB_1->SetPointError(p_idx_1, 0.0, aul_sin_err); // No x error
+                p_idx_1++;
+            } else if (x < 10){
+                graph_ALL_cos_vs_xB_2->SetPoint(p_idx_2, mean_xB, aul_sin);
+                graph_ALL_cos_vs_xB_2->SetPointError(p_idx_2, 0.0, aul_sin_err);
+                p_idx_2++;
+            } else if (x < 12){
+                graph_ALL_cos_vs_xB_3->SetPoint(p_idx_3, mean_xB, aul_sin);
+                graph_ALL_cos_vs_xB_3->SetPointError(p_idx_3, 0.0, aul_sin_err);
+                p_idx_3++;
+            } else if (x < 18){
+                graph_ALL_cos_vs_xB_4->SetPoint(p_idx_4, mean_xB, aul_sin);
+                graph_ALL_cos_vs_xB_4->SetPointError(p_idx_4, 0.0, aul_sin_err);
+                p_idx_4++;
             }
         }
 
-        c_bin_zPt->Update();
-        c_bin_zPt->Write();
+        graph_ALL_cos_vs_xB->SetTitle(Form("A_{LL}^{cos#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) for bin (%d, z-P_{hT}) ; x_{B}; A_{LL}^{cos#Phi_{h}}", z+1));
+        graph_ALL_cos_vs_xB_1->SetMarkerStyle(20), graph_ALL_cos_vs_xB_2->SetMarkerStyle(20), graph_ALL_cos_vs_xB_3->SetMarkerStyle(20), graph_ALL_cos_vs_xB_4->SetMarkerStyle(20);
+        graph_ALL_cos_vs_xB_1->SetLineColor(kAzure-5);
+        graph_ALL_cos_vs_xB_1->SetMarkerColor(kAzure-5);
+        graph_ALL_cos_vs_xB_2->SetLineColor(kViolet-5);
+        graph_ALL_cos_vs_xB_2->SetMarkerColor(kViolet-5);
+        graph_ALL_cos_vs_xB_3->SetLineColor(kPink-5);
+        graph_ALL_cos_vs_xB_3->SetMarkerColor(kPink-5);
+        graph_ALL_cos_vs_xB_4->SetLineColor(kOrange-5);
+        graph_ALL_cos_vs_xB_4->SetMarkerColor(kOrange-5);
+
+
+        TCanvas* c_ALL_cos_xB_2 = new TCanvas(Form("All_cos_vs_xB_4d_zPt_bin%d", z+1), " asymmetry vs x_{B} for bin (n, z-P_{hT})", 800, 600);
+        //graph_ALL_cos_vs_xB->Draw("A");
+        TMultiGraph *mg_ALL_cos_xB_2 = new TMultiGraph();
+        mg_ALL_cos_xB_2->SetTitle(Form("A_{LL}^{cos#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) for bin (%d, z-P_{hT}) ; x_{B}; A_{LL}^{cos#Phi_{h}}", z+1));
+        mg_ALL_cos_xB_2->Add(graph_ALL_cos_vs_xB_1, "P");
+        mg_ALL_cos_xB_2->Add(graph_ALL_cos_vs_xB_2, "P");
+        mg_ALL_cos_xB_2->Add(graph_ALL_cos_vs_xB_3, "P");
+        mg_ALL_cos_xB_2->Add(graph_ALL_cos_vs_xB_4, "P");
+        mg_ALL_cos_xB_2->Draw("A");
+        //mg_ALL_cos_xB_2->GetYaxis()->SetRangeUser(-0.1, 0.1);
+        TLine* guideLine2 = new TLine(mg_ALL_cos_xB_2->GetXaxis()->GetXmin(), 0, mg_ALL_cos_xB_2->GetXaxis()->GetXmax(), 0);
+        guideLine2->SetLineStyle(2);  
+        guideLine2->SetLineColor(kGray+1);
+        guideLine2->Draw();
+
+        TLegend* legend = new TLegend(0.13, 0.7, 0.35, 0.88); // Adjust position (x1,y1,x2,y2)
+        legend->AddEntry(graph_ALL_cos_vs_xB_1, "1 < Q^{2} [GeV^{2}] < 3", "ep");
+        legend->AddEntry(graph_ALL_cos_vs_xB_2, "3 < Q^{2} [GeV^{2}] < 5", "ep");
+        legend->AddEntry(graph_ALL_cos_vs_xB_3, "5 < Q^{2} [GeV^{2}] < 7", "ep");
+        legend->AddEntry(graph_ALL_cos_vs_xB_4, "7 < Q^{2} [GeV^{2}] < 11", "ep");
+        legend->SetFillStyle(0);  // Transparent background
+        legend->Draw();
+        c_ALL_cos_xB_2->Update();
+        c_ALL_cos_xB_2->Write();
     }
 
 
 
+    dir_alu_sin->cd();
 
-
-    // multiplot
-
-    // =======================================================================
-    // CONFIGURAZIONE
-    // =======================================================================
-
-    const int nRows = 4;
-    const int nCols = 8;
-
-    int layout[nRows][nCols] = {
-        { 0,  0,  0, 0, 0, 0, 13, 14},
-        { 0,  0,  0, 0, 0, 11, 12, 0},
-        { 0,  0,  6, 7, 8, 9, 10, 0},
-        { 1,  2,  3, 4, 5, 0,  0,  0}
-    };
-
-    // Nuovi assi lineari
-    double x_min = 0.0,  x_max = 0.8;   // xB
-    double y_min = 1.0,  y_max = 10.0;  // Q²
-
-    // =======================================================================
-    // CANVAS
-    // =======================================================================
-
-    TCanvas *c_layout = new TCanvas("c_AUL_sin", "AUL sin multipanel", 2000, 1300);
-    c_layout->cd();
-
-    // =======================================================================
-    // PAD PER ASSI GLOBALI (lineari)
-    // =======================================================================
-
-    TPad *pad_axes = new TPad("pad_axes", "Global Axes", 0, 0, 1, 1);
-    pad_axes->SetFrameLineWidth(0);
-    pad_axes->Draw();
-    pad_axes->cd();
-
-    pad_axes->SetTickx(0);
-    pad_axes->SetTicky(0);
-
-    double x_ndc_min = 0.07, x_ndc_max = 0.96;
-    double y_ndc_min = 0.07, y_ndc_max = 0.96;
-
-    // -------- Draw axes lines --------
-    TLine *xAxisLine = new TLine(x_ndc_min, y_ndc_min, x_ndc_max, y_ndc_min);
-    xAxisLine->SetLineWidth(2);
-    xAxisLine->SetNDC(true);
-    xAxisLine->Draw();
-
-    TLine *yAxisLine = new TLine(x_ndc_min, y_ndc_min, x_ndc_min, y_ndc_max);
-    yAxisLine->SetLineWidth(2);
-    yAxisLine->SetNDC(true);
-    yAxisLine->Draw();
-
-
-    // =======================================================================
-    // TICKS E LABELS — asse x lineare
-    // =======================================================================
-
-    int nTicksX = 8;
-    for (int i = 0; i <= nTicksX; i++) {
-
-        double xv = x_min + i*(x_max-x_min)/nTicksX;
-        double pos = x_ndc_min + (xv - x_min)/(x_max - x_min)*(x_ndc_max - x_ndc_min);
-
-        TLine *tick = new TLine(pos, y_ndc_min, pos, y_ndc_min - 0.015);
-        tick->SetNDC(true);
-        tick->Draw();
-
-        TLatex *lab = new TLatex(pos, y_ndc_min - 0.035, Form("%.1f", xv));
-        lab->SetNDC(true);
-        lab->SetTextAlign(22);
-        lab->SetTextSize(0.02);
-        lab->Draw();
-    }
-
-    // Label asse X
-    TLatex *xlabel = new TLatex(0.85, y_ndc_min - 0.065, "x_{B}");
-    xlabel->SetTextSize(0.03);
-    xlabel->SetNDC(true);
-    xlabel->Draw();
-
-
-    // =======================================================================
-    // TICKS E LABELS — asse y lineare
-    // =======================================================================
-
-    int nTicksY = 9;
-    for (int i = 0; i <= nTicksY; i++) {
-
-        double yv = y_min + i*(y_max-y_min)/nTicksY;
-        double pos = y_ndc_min + (yv - y_min)/(y_max - y_min)*(y_ndc_max - y_ndc_min);
-
-        TLine *tick = new TLine(x_ndc_min, pos, x_ndc_min - 0.015, pos);
-        tick->SetNDC(true);
-        tick->Draw();
-
-        TLatex *lab = new TLatex(x_ndc_min - 0.025, pos, Form("%.1f", yv));
-        lab->SetNDC(true);
-        lab->SetTextAlign(32);
-        lab->SetTextSize(0.02);
-        lab->Draw();
-    }
-
-    // Label asse Y
-    TLatex *ylabel = new TLatex(x_ndc_min - 0.05, 0.9, "Q^{2}  (GeV^{2})");
-    ylabel->SetTextSize(0.03);
-    ylabel->SetTextAngle(90);
-    ylabel->SetNDC(true);
-    ylabel->Draw();
-
-    pad_axes->Modified();
-    pad_axes->Update();
-
-
-    // =======================================================================
-    // PAD MULTIPLI PER I PLOT
-    // =======================================================================
-
-    c_layout->cd();
-
-    double xMargin = 0.07, yMargin = 0.07;
-    double padW = (1.0 - 2*xMargin) / nCols;
-    double padH = (1.0 - 2*yMargin) / nRows;
-
-    for (int iRow = 0; iRow < nRows; ++iRow) {
-        for (int iCol = 0; iCol < nCols; ++iCol) {
-
-            int idx = layout[iRow][iCol];
-            if (idx == 0) continue;
-
-            double x1 = xMargin + iCol * padW;
-            double x2 = x1 + padW;
-
-            double y2 = 1 - yMargin - iRow * padH;
-            double y1 = y2 - padH;
-
-            TString padName = Form("pad_r%d_c%d", iRow, iCol);
-
-            TPad *pad = new TPad(padName, padName, x1, y1, x2, y2);
-            pad->SetRightMargin(0);
-            pad->SetLeftMargin(0);
-            pad->SetBottomMargin(0);
-            pad->SetTopMargin(0);
-            pad->Draw();
-            pad->cd();
-
-            hist_AUL_sin_xQ2_zPt[idx - 1]->SetTitle("");
-            hist_AUL_sin_xQ2_zPt[idx - 1]->Draw("COL");
-            vector<TPolyLine*> gridLines_zp;
-            vector<TText*> labels_zp;
-
-            int bin_index_zp = 1;
-
-            // Loop generale
-            for (int iz = 0; iz < 4; ++iz) {
-                for (size_t ip = 0; ip < binning_z_for_Pt[iz].size(); ++ip) {
-
-                    double Pt[5] = {bin_Pt[iz][0], bin_Pt[iz][1], bin_Pt[iz][1], bin_Pt[iz][0], bin_Pt[iz][0]};
-                    double z[5] = {binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][0]};
-
-                    // Rettangolo
-                    TPolyLine *rect_zp = new TPolyLine(5, z, Pt);
-                    rect_zp->SetLineWidth(1);
-                    rect_zp->SetLineColor(kBlack);
-                    rect_zp->Draw("same");
-                    gridLines_zp.push_back(rect_zp);
-
-                }
-            }
-
-            c_layout->cd();
-        }
-    }
-
-
-    // =======================================================================
-    // PALETTE
-    // =======================================================================
-
-    TPad *pad_palette = new TPad("pad_palette", "", 0.95, 0.1, 1, 0.9);
-    pad_palette->SetRightMargin(0.5);
-    pad_palette->Draw();
-    pad_palette->cd();
-
-    TH2F *h_ref = (TH2F*) hist_AUL_sin_xQ2_zPt[2]->Clone("h_ref_for_palette");
-    h_ref->SetStats(0);
-    h_ref->Draw("COLZ");
-
-    gPad->Update();
-
-    TPaletteAxis *pal = (TPaletteAxis*) h_ref->GetListOfFunctions()->FindObject("palette");
-    if (pal) {
-        pal->SetLabelSize(0.22);
-        pal->SetX1NDC(0.05);
-        pal->SetX2NDC(0.6);
-        pal->SetY1NDC(0.05);
-        pal->SetY2NDC(0.95);
-    }
-
-    pad_palette->Modified();
-    c_layout->Update();
-    c_layout->Write();
-
-
-
-
-
-    // ------------------------------------------------------------------------------
-
-
-
-    TCanvas *c_layout2 = new TCanvas("c_AUL_sin2", "AUL sin2 multipanel", 2000, 1300);
-    c_layout2->cd();
-
-    // =======================================================================
-    // PAD PER ASSI GLOBALI (lineari)
-    // =======================================================================
-
-    TPad *pad_axes2 = new TPad("pad_axes2", "Global Axes", 0, 0, 1, 1);
-    pad_axes2->SetFrameLineWidth(0);
-    pad_axes2->Draw();
-    pad_axes2->cd();
-
-    pad_axes2->SetTickx(0);
-    pad_axes2->SetTicky(0);
-
-
-    // -------- Draw axes lines --------
-    TLine *xAxisLine2 = new TLine(x_ndc_min, y_ndc_min, x_ndc_max, y_ndc_min);
-    xAxisLine2->SetLineWidth(2);
-    xAxisLine2->SetNDC(true);
-    xAxisLine2->Draw();
-
-    TLine *yAxisLine2 = new TLine(x_ndc_min, y_ndc_min, x_ndc_min, y_ndc_max);
-    yAxisLine2->SetLineWidth(2);
-    yAxisLine2->SetNDC(true);
-    yAxisLine2->Draw();
-
-
-    // =======================================================================
-    // TICKS E LABELS — asse x lineare
-    // =======================================================================
-
-    for (int i = 0; i <= nTicksX; i++) {
-
-        double xv = x_min + i*(x_max-x_min)/nTicksX;
-        double pos = x_ndc_min + (xv - x_min)/(x_max - x_min)*(x_ndc_max - x_ndc_min);
-
-        TLine *tick2 = new TLine(pos, y_ndc_min, pos, y_ndc_min - 0.015);
-        tick2->SetNDC(true);
-        tick2->Draw();
-
-        TLatex *lab2 = new TLatex(pos, y_ndc_min - 0.035, Form("%.1f", xv));
-        lab2->SetNDC(true);
-        lab2->SetTextAlign(22);
-        lab2->SetTextSize(0.02);
-        lab2->Draw();
-    }
-
-    // Label asse X
-    TLatex *xlabel2 = new TLatex(0.85, y_ndc_min - 0.065, "x_{B}");
-    xlabel2->SetTextSize(0.03);
-    xlabel2->SetNDC(true);
-    xlabel2->Draw();
-
-
-    // =======================================================================
-    // TICKS E LABELS — asse y lineare
-    // =======================================================================
-
-    for (int i = 0; i <= nTicksY; i++) {
-
-        double yv = y_min + i*(y_max-y_min)/nTicksY;
-        double pos = y_ndc_min + (yv - y_min)/(y_max - y_min)*(y_ndc_max - y_ndc_min);
-
-        TLine *tick = new TLine(x_ndc_min, pos, x_ndc_min - 0.015, pos);
-        tick->SetNDC(true);
-        tick->Draw();
-
-        TLatex *lab = new TLatex(x_ndc_min - 0.025, pos, Form("%.1f", yv));
-        lab->SetNDC(true);
-        lab->SetTextAlign(32);
-        lab->SetTextSize(0.02);
-        lab->Draw();
-    }
-
-    // Label asse Y
-    TLatex *ylabel2 = new TLatex(x_ndc_min - 0.05, 0.9, "Q^{2}  (GeV^{2})");
-    ylabel2->SetTextSize(0.03);
-    ylabel2->SetTextAngle(90);
-    ylabel2->SetNDC(true);
-    ylabel2->Draw();
-
-    pad_axes2->Modified();
-    pad_axes2->Update();
-
-
-    // =======================================================================
-    // PAD MULTIPLI PER I PLOT
-    // =======================================================================
-
-    c_layout2->cd();
-
-
-
-    for (int iRow = 0; iRow < nRows; ++iRow) {
-        for (int iCol = 0; iCol < nCols; ++iCol) {
-
-            int idx = layout[iRow][iCol];
-            if (idx == 0) continue;
-
-            double x1 = xMargin + iCol * padW;
-            double x2 = x1 + padW;
-
-            double y2 = 1 - yMargin - iRow * padH;
-            double y1 = y2 - padH;
-
-            TString padName = Form("pad_r%d_c%d", iRow, iCol);
-
-            TPad *pad = new TPad(padName, padName, x1, y1, x2, y2);
-            pad->SetRightMargin(0);
-            pad->SetLeftMargin(0);
-            pad->SetBottomMargin(0);
-            pad->SetTopMargin(0);
-            pad->Draw();
-            pad->cd();
-
-            hist_AUL_sin2_xQ2_zPt[idx - 1]->SetTitle("");
-            hist_AUL_sin2_xQ2_zPt[idx - 1]->Draw("COL");
-            vector<TPolyLine*> gridLines_zp;
-            vector<TText*> labels_zp;
-
-            int bin_index_zp = 1;
-
-            // Loop generale
-            for (int iz = 0; iz < 4; ++iz) {
-                for (size_t ip = 0; ip < binning_z_for_Pt[iz].size(); ++ip) {
-
-                    double Pt[5] = {bin_Pt[iz][0], bin_Pt[iz][1], bin_Pt[iz][1], bin_Pt[iz][0], bin_Pt[iz][0]};
-                    double z[5] = {binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][0], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][1], binning_z_for_Pt[iz][ip][0]};
-
-                    // Rettangolo
-                    TPolyLine *rect_zp = new TPolyLine(5, z, Pt);
-                    rect_zp->SetLineWidth(1);
-                    rect_zp->SetLineColor(kBlack);
-                    rect_zp->Draw("same");
-                    gridLines_zp.push_back(rect_zp);
-
-                }
-            }
-
-            c_layout2->cd();
-        }
-    }
-
-
-    // =======================================================================
-    // PALETTE
-    // =======================================================================
-
-    TPad *pad_palette2 = new TPad("pad_palette2", "", 0.95, 0.1, 1, 0.9);
-    pad_palette2->SetRightMargin(0.5);
-    pad_palette2->Draw();
-    pad_palette2->cd();
-
-    TH2F *h_ref2 = (TH2F*) hist_AUL_sin2_xQ2_zPt[2]->Clone("h_ref_for_palette2");
-    h_ref2->SetStats(0);
-    h_ref2->Draw("COLZ");
-
-    gPad->Update();
-
-    TPaletteAxis *pal2 = (TPaletteAxis*) h_ref2->GetListOfFunctions()->FindObject("palette");
-    if (pal2) {
-        pal2->SetLabelSize(0.22);
-        pal2->SetX1NDC(0.05);
-        pal2->SetX2NDC(0.6);
-        pal2->SetY1NDC(0.05);
-        pal2->SetY2NDC(0.95);
-    }
-
-    pad_palette2->Modified();
-    c_layout2->Update();
-    c_layout2->Write();
+    TCanvas* c_ALU_4D_grid = new TCanvas("ALU_sin_4D_grid","ALU sin(phi) - 4D",1800, 1500);
 
     
+    // Limiti complessivi della matrice
+    const double left   = 0.025;
+    const double right  = 0.945;
+    const double bottom = 0.025;
+    const double top    = 0.935;
+
+    // Spazio per gli assi esterni
+    const double marginLeft   = 0.045;
+    const double marginBottom = 0.045;
+
+    // Dimensioni IDENTICHE delle aree dei grafici
+    const double plotW = (right - left - marginLeft) / 4.0;
+    const double plotH = (top - bottom - marginBottom) / 4.0;
+
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) {
+
+            int padNumber = r * 4 + c + 1;
+
+            // Prima colonna più larga per contenere l'asse Y
+            double x1 = left + marginLeft + c * plotW;
+            double x2 = x1 + plotW;
+
+            if (c == 0)
+                x1 -= marginLeft;
+
+            // Ultima riga più alta per contenere l'asse X
+            double y2 = top - r * plotH;
+            double y1 = y2 - plotH;
+
+            if (r == 3)
+                y1 -= marginBottom;
+
+            TPad* pad = new TPad(
+                Form("pad_ALU_%d", padNumber),
+                "", x1, y1, x2, y2
+            );
+
+            pad->SetNumber(padNumber);
+
+            // Margini espressi come frazioni del singolo pad
+            double leftMargin = (c == 0)
+                ? marginLeft / (plotW + marginLeft)
+                : 0.0;
+
+            double bottomMargin = (r == 3)
+                ? marginBottom / (plotH + marginBottom)
+                : 0.0;
+
+            pad->SetLeftMargin(leftMargin);
+            pad->SetRightMargin(0.0);
+            pad->SetBottomMargin(bottomMargin);
+            pad->SetTopMargin(0.0);
+
+            pad->Draw();
+        }
+    }
 
 
+    // 4D
+    for (int z = 0; z < nbin_zPt; z++) {
+        //if(z == 0 || z == 7) continue;
+        TGraphErrors* graph_ALU_sin_vs_xB = new TGraphErrors();
+        TGraphErrors* graph_ALU_sin_vs_xB_1 = new TGraphErrors();
+        TGraphErrors* graph_ALU_sin_vs_xB_2 = new TGraphErrors();
+        TGraphErrors* graph_ALU_sin_vs_xB_3 = new TGraphErrors();
+        TGraphErrors* graph_ALU_sin_vs_xB_4 = new TGraphErrors();
+        TGraphErrors* graph4D_corr_2sin = new TGraphErrors();
+        int p_idx = 0, p_idx_1 = 0, p_idx_2 = 0, p_idx_3 = 0, p_idx_4 = 0;
+        for(int x = 0; x < nbin_xQ2; x++){
+            if (vec_kaonp_xB_4d[x][z].empty()) continue; // Skip empty bins
+            if (vec_kaonp_z_4d[x][z].empty()) continue;
+            // Compute mean xB for this bin
+            double sum_eps = 0;
+            //for (double valeps : vec_kaonp_eps_4d[x][z]) sum_eps += valeps;
+            //double mean_eps = sum_eps / vec_kaonp_eps_4d[x][z].size();
+            double sum_xB = 0.0;
+            double min_x = 1;
+            double max_x = 0;
+            for (double val : vec_kaonp_xB_4d[x][z]){
+                sum_xB += val;
+                if(val > max_x) max_x = val;
+                if(val < min_x) min_x = val;
+            }
+            double mean_xB = sum_xB / vec_kaonp_xB_4d[x][z].size();
+            // Get ALU_sin and error from vectors
+            double aul_sin = ALU_sin_4d[x][z];
+            //double aul_sin = 0;
+            double aul_sin_err = ALU_sin_err_4d[x][z];
+            if(aul_sin > 1 || aul_sin < -1) continue;
+            if(aul_sin_err > 0.4) aul_sin_err = 0.4;
+            graph_ALU_sin_vs_xB->SetPoint(p_idx, mean_xB, aul_sin);
+            graph_ALU_sin_vs_xB->SetPointError(p_idx, 0.0, aul_sin_err); // No x error
+            graph4D_corr_2sin->SetPoint(p_idx, mean_xB, Corr_2sin_4d[x][z]);
+            p_idx++;
+            if(x < 5){
+                graph_ALU_sin_vs_xB_1->SetPoint(p_idx_1, mean_xB, aul_sin);
+                graph_ALU_sin_vs_xB_1->SetPointError(p_idx_1, 0.0, aul_sin_err); // No x error
+                p_idx_1++;
+            } else if (x < 10){
+                graph_ALU_sin_vs_xB_2->SetPoint(p_idx_2, mean_xB, aul_sin);
+                graph_ALU_sin_vs_xB_2->SetPointError(p_idx_2, 0.0, aul_sin_err);
+                p_idx_2++;
+            } else if (x < 12){
+                graph_ALU_sin_vs_xB_3->SetPoint(p_idx_3, mean_xB, aul_sin);
+                graph_ALU_sin_vs_xB_3->SetPointError(p_idx_3, 0.0, aul_sin_err);
+                p_idx_3++;
+            } else if (x < 18){
+                graph_ALU_sin_vs_xB_4->SetPoint(p_idx_4, mean_xB, aul_sin);
+                graph_ALU_sin_vs_xB_4->SetPointError(p_idx_4, 0.0, aul_sin_err);
+                p_idx_4++;
+            }
+        }
+
+        graph_ALU_sin_vs_xB->SetTitle(Form("A_{LU}^{sin#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) for bin (%d, z-P_{hT}) ; x_{B}; A_{LU}^{sin#Phi_{h}}", z+1));
+        graph_ALU_sin_vs_xB_1->SetMarkerStyle(20), graph_ALU_sin_vs_xB_2->SetMarkerStyle(20), graph_ALU_sin_vs_xB_3->SetMarkerStyle(20), graph_ALU_sin_vs_xB_4->SetMarkerStyle(20);
+        graph_ALU_sin_vs_xB_1->SetLineColor(kAzure-5);
+        graph_ALU_sin_vs_xB_1->SetMarkerColor(kAzure-5);
+        graph_ALU_sin_vs_xB_2->SetLineColor(kViolet-5);
+        graph_ALU_sin_vs_xB_2->SetMarkerColor(kViolet-5);
+        graph_ALU_sin_vs_xB_3->SetLineColor(kPink-5);
+        graph_ALU_sin_vs_xB_3->SetMarkerColor(kPink-5);
+        graph_ALU_sin_vs_xB_4->SetLineColor(kOrange-5);
+        graph_ALU_sin_vs_xB_4->SetMarkerColor(kOrange-5);
 
 
+        TCanvas* c_ALU_sin_xB_2 = new TCanvas(Form("ALU_sin_vs_xB_4d_zPt_bin%d", z+1), " asymmetry vs x_{B} for bin (n, z-P_{hT})", 800, 600);
+        //graph_ALU_sin_vs_xB->Draw("A");
+        TMultiGraph *mg_ALU_sin_xB_2 = new TMultiGraph();
+        mg_ALU_sin_xB_2->SetTitle(Form("A_{LU}^{sin#Phi_{h}} vs x_{B} (x_{B}-Q^{2} bin) for bin (%d, z-P_{hT}) ; x_{B}; A_{LU}^{sin#Phi_{h}}", z+1));
+        mg_ALU_sin_xB_2->Add(graph_ALU_sin_vs_xB_1, "P");
+        mg_ALU_sin_xB_2->Add(graph_ALU_sin_vs_xB_2, "P");
+        mg_ALU_sin_xB_2->Add(graph_ALU_sin_vs_xB_3, "P");
+        mg_ALU_sin_xB_2->Add(graph_ALU_sin_vs_xB_4, "P");
+        mg_ALU_sin_xB_2->Draw("A");
+        //mg_ALU_sin_xB_2->GetYaxis()->SetRangeUser(-0.1, 0.1);
+        TLine* guideLine2 = new TLine(mg_ALU_sin_xB_2->GetXaxis()->GetXmin(), 0, mg_ALU_sin_xB_2->GetXaxis()->GetXmax(), 0);
+        guideLine2->SetLineStyle(2);  
+        guideLine2->SetLineColor(kGray+1);
+        guideLine2->Draw();
+
+        TLegend* legend = new TLegend(0.13, 0.7, 0.35, 0.88); // Adjust position (x1,y1,x2,y2)
+        legend->AddEntry(graph_ALU_sin_vs_xB_1, "1 < Q^{2} [GeV^{2}] < 3", "ep");
+        legend->AddEntry(graph_ALU_sin_vs_xB_2, "3 < Q^{2} [GeV^{2}] < 5", "ep");
+        legend->AddEntry(graph_ALU_sin_vs_xB_3, "5 < Q^{2} [GeV^{2}] < 7", "ep");
+        legend->AddEntry(graph_ALU_sin_vs_xB_4, "7 < Q^{2} [GeV^{2}] < 11", "ep");
+        legend->SetFillStyle(0);  // Transparent background
+        legend->Draw();
+        c_ALU_sin_xB_2->Update();
+        c_ALU_sin_xB_2->Write();
 
 
+        // 
+        // z = 0,1,2,3   -> ultima riga
+        // z = 4,5,6,7   -> terza riga
+        // z = 8,9,10,11 -> seconda riga
+        // z = 12,13,14,15 -> prima riga
+
+        
+        int row = 3 - z / 4;
+        int col = z % 4;
+        int pad_index = row * 4 + col + 1;
+
+        c_ALU_4D_grid->cd(pad_index);
+
+        // Nuovo multigraph dedicato alla griglia
+        TMultiGraph* mg_grid = new TMultiGraph();
+
+        TGraphErrors* graphs[4] = {graph_ALU_sin_vs_xB_1,graph_ALU_sin_vs_xB_2,graph_ALU_sin_vs_xB_3,graph_ALU_sin_vs_xB_4};
+
+        for (int i = 0; i < 4; ++i) {
+            TGraphErrors* gr = (TGraphErrors*)graphs[i]->Clone(Form("ALU_grid_z%d_q%d", z, i));
+            gr->SetMarkerSize(0.5);
+            mg_grid->Add(gr, "P");
+        }
+
+        // Titolo vuoto: niente titolo interno
+        mg_grid->SetTitle("");
+        // Intervallo fisso per tutti i grafici
+        mg_grid->SetMinimum(-0.3);
+        mg_grid->SetMaximum(0.3);
+
+        mg_grid->Draw("AP");
+
+        gPad->Modified();
+        gPad->Update();
+
+        // Asse X fisso
+        mg_grid->GetXaxis()->SetLimits(0.05, 0.65);
+        // Asse Y fisso
+        mg_grid->GetYaxis()->SetRangeUser(-0.15, 0.3);
+
+        // Titoli solo dove richiesto
+        // Numeri dell'asse X solo nella riga inferiore
+        mg_grid->GetXaxis()->SetLabelSize(z < 4 ? 0.050 : 0.0);
+        // Numeri dell'asse Y solo nella prima colonna
+        mg_grid->GetYaxis()->SetLabelSize(col == 0 ? 0.050 : 0.0);
+
+        mg_grid->GetXaxis()->SetTitle(z < 4 ? "x_{B}" : "");
+        mg_grid->GetYaxis()->SetTitle(col == 0 ? "A_{LU}^{sin#Phi_{h}}" : "");
+
+        // Dimensioni assi
+        mg_grid->GetXaxis()->SetTitleSize(0.065);
+        mg_grid->GetYaxis()->SetTitleSize(0.065);
+
+        //mg_grid->GetXaxis()->SetLabelSize(0.050);
+        //mg_grid->GetYaxis()->SetLabelSize(0.050);
+
+        mg_grid->GetXaxis()->SetTitleOffset(1.05);
+        mg_grid->GetYaxis()->SetTitleOffset(1.05);
+
+        // Niente titolo ROOT sopra il plot
+        if (auto* titleBox = gPad->GetPrimitive("title")) {
+            gPad->GetListOfPrimitives()->Remove(titleBox);
+        }
+
+        // Linea orizzontale y = 0
+        TLine* zeroLine = new TLine(0.05, 0.0,0.65, 0.0);
+        zeroLine->SetLineStyle(2);
+        zeroLine->SetLineColor(kGray + 1);
+        zeroLine->Draw("same");
+
+        // Legenda soltanto nel pad 13
+        if (z == 12) {
+            TLegend* legend_grid = new TLegend(0.2, 0.75, 0.45, 0.98);
+            legend_grid->SetFillStyle(0);
+            legend_grid->SetTextSize(0.035);
+            auto* list = mg_grid->GetListOfGraphs();
+            legend_grid->AddEntry(list->At(0), "1 < Q^{2} < 3", "ep");
+            legend_grid->AddEntry(list->At(1), "3 < Q^{2} < 5", "ep");
+            legend_grid->AddEntry(list->At(2), "5 < Q^{2} < 7", "ep");
+            legend_grid->AddEntry(list->At(3), "7 < Q^{2} < 11", "ep");
+            legend_grid->Draw();
+        }
+        gPad->Modified();
+        gPad->Update();
+    }
+        
+    c_ALU_4D_grid->cd();
+
+    // Titolo generale
+    TLatex title;
+    title.SetNDC();
+    title.SetTextAlign(22);
+    title.SetTextSize(0.027);
+    // Titolo generale
+    title.DrawLatex(0.50, 0.975,"A_{LU}^{sin#Phi_{h}} vs x_{B}");
+
+    const char* zLabels[4] = {
+        "0.20 < z < 0.35",
+        "0.35 < z < 0.50",
+        "0.50 < z < 0.70",
+        "0.70 < z < 1.00"
+    };
+
+    TLatex zText;
+    zText.SetNDC();
+    zText.SetTextAlign(22);
+    zText.SetTextSize(0.020);
+    // Etichette z
+    for (int c = 0; c < 4; ++c) {
+        //double xCenter = left + (c + 0.5) * padW;
+        double xCenter = left + marginLeft + (c + 0.5) * plotW;
+        zText.DrawLatex(xCenter, 0.950, zLabels[c]);
+    }
+    const char* ptLabels[4] = {
+        "0.6 < P_{hT} < 1.4 GeV",
+        "0.4 < P_{hT} < 0.6 GeV",
+        "0.2 < P_{hT} < 0.4 GeV",
+        "0.0 < P_{hT} < 0.2 GeV"
+    };
+    TLatex ptText;
+    ptText.SetNDC();
+    ptText.SetTextAlign(22);
+    ptText.SetTextAngle(-90); // Rotazione oraria
+    ptText.SetTextSize(0.020);
+    // Etichette Pt ruotate
+    for (int r = 0; r < 4; ++r) {
+        //double yCenter = top - (r + 0.5) * padH;
+        double yCenter = top - (r + 0.5) * plotH;
+        ptText.DrawLatex(0.955, yCenter, ptLabels[r]);
+    }
+    c_ALU_4D_grid->Write();
 
 
-
-
-
-    //
+    for (int i = 0; i < nbin_xQ2; i++){
+        for(int j = 0; j < nbin_zPt; j++){
+            double sum_z = 0.0, sum_xB = 0.0, sum_Q2 = 0.0, sum_Pt = 0.0, sum_eps = 0.0;
+            for (double val_z : vec_kaonp_z_4d[i][j]) sum_z += val_z;
+            double mean_z = sum_z / vec_kaonp_z_4d[i][j].size();
+            for (double val_xB : vec_kaonp_xB_4d[i][j]) sum_xB += val_xB;
+            double mean_xB = sum_xB / vec_kaonp_xB_4d[i][j].size();
+            for (double val_Q2 : vec_kaonp_Q2_4d[i][j]) sum_Q2 += val_Q2;
+            double mean_Q2 = sum_Q2 / vec_kaonp_Q2_4d[i][j].size();
+            for (double val_Pt : vec_kaonp_Pt_4d[i][j]) sum_Pt += val_Pt;
+            double mean_Pt = sum_Pt / vec_kaonp_Pt_4d[i][j].size();
+            for (double valeps : vec_kaonp_eps_4d[i][j]) sum_eps += valeps;
+            double mean_eps = sum_eps / vec_kaonp_eps_4d[i][j].size();
+            csvFile << i+1 << "," << j+1 << "," << mean_xB << "," << mean_Q2 << "," << mean_z << "," << mean_Pt << "," << mean_eps << " , " << AUL_sin_4d[i][j] << " , " << AUL_sin_err_4d[i][j] << " , " << 
+            AUL_2sin_4d[i][j] << " , " << AUL_2sin_err_4d[i][j] << " , " << ALL_4d[i][j] << " , " << ALL_err_4d[i][j]  << " , " << 
+            ALL_cos_4d[i][j]  << " , " << ALL_cos_err_4d[i][j]  << " , " << 
+            AUU_cos_4d[i][j] << " , " << AUU_cos_err_4d[i][j] << " , " << AUU_cos2_4d[i][j] << " , " << AUU_cos2_err_4d[i][j] << " , " << 
+            ALU_sin_4d[i][j]  << " , " << ALU_sin_err_4d[i][j]  << endl;
+        }
+    }
 
 
 
     //outFile.Write();
+    csvFile.close();
     outFile.Close();
     //chain.Close();
 

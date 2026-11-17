@@ -399,18 +399,29 @@ int getBinIndex_xQ2(double xB, double Q2){
 
 
 int getBinIndex_xQ2dep(double xB, double Q2){
-    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.4},{0.4,0.5},{0.5, 0.60},{0.60, 0.80}};
+    /*
+    double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.5},{0.5, 0.80}};
     vector<vector<array<double,2>>> binning_Q2_for_xB = {
-        {{1,2}, {2,3}},                  
-        {{1,2}, {2,3}, {3,4}},           
-        {{1,2.5}, {2.5,4}, {4,5.5}},     
+        {{1,1.75}, {1.75,2.5}},                  
+        {{1,2.25}, {2.25,4}},           
+        {{1,2.75}, {2.75,5}},     
+        {{1.5,4}, {4,8}},       
+        {{2.5,6.5},{6.5, 11}}                                 
+    };
+    */
+   double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.4},{0.4,0.5},{0.5, 0.60},{0.60, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB = {
+        {{1,1.75}, {1.75,2.75}},                  
+        {{1.25,2}, {2,2.75}, {2.75,3.75}},           
+        {{1.25,2.5}, {2.5,3.75}, {3.75,5.5}},     
         {{1.5,3}, {3,4.5}, {4.5,6.5}},       
         {{2,4}, {4,6}, {6,8}},         
         {{2.5,6}, {6,10}},                
         {{4,7},{7,11}}                         
     };
+    
     int binIndex = 1;
-    for (int ix = 0; ix < 5; ix++){
+    for (int ix = 0; ix < 7; ix++){
         if (xB >= bin_xB[ix][0] && xB < bin_xB[ix][1]){
             for (size_t iq = 0; iq < binning_Q2_for_xB[ix].size(); iq++){
                 double Q2min = binning_Q2_for_xB[ix][iq][0];
@@ -674,18 +685,33 @@ void rgc_analysis_1D(const char* period, const char* target) {
         {{0.2, 0.5}, {0.5, 0.6}, {0.6, 0.7}, {0.7, 1.0}}
     };
 
+    double bin_Pt_4D[][2] = {{0, 0.2}, {0.2, 0.4}, {0.4, 0.6}, {0.6, 1.4}};
+    vector<vector<array<double,2>>> binning_z_for_Pt_4D = {
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}},
+        {{0.2, 0.35}, {0.35, 0.5}, {0.5, 0.7}, {0.7, 1.0}}
+    };
+
     double bin_xB[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.4},{0.4,0.5},{0.5, 0.60},{0.60, 0.80}};
     vector<vector<array<double,2>>> binning_Q2_for_xB = {
-        {{1,2}, {2,3}},                  
-        {{1,2}, {2,3}, {3,4}},           
-        {{1,2.5}, {2.5,4}, {4,5.5}},     
+        {{1,1.75}, {1.75,2.75}},                  
+        {{1.125,2}, {2,2.75}, {2.75,3.75}},           
+        {{1.25,2.25}, {2.25,3.25}, {3.25,5.5}},     
         {{1.5,3}, {3,4.5}, {4.5,6.5}},       
         {{2,4}, {4,6}, {6,8}},         
         {{2.5,6}, {6,10}},                
         {{4,7},{7,11}}                         
     };
     
-
+    double bin_xB_last[][2] = {{0.075, 0.15},{0.15, 0.225},{0.225, 0.3},{0.3,0.5},{0.5, 0.80}};
+    vector<vector<array<double,2>>> binning_Q2_for_xB_last = {
+        {{1,1.75}, {1.75,2.5}},                  
+        {{1,2.25}, {2.25,4}},           
+        {{1,2.75}, {2.75,5}},     
+        {{1.5,4}, {4,8}},       
+        {{2.5,6.5},{6.5, 11}}                                 
+    };
 
 
 
@@ -973,6 +999,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     double nbin_zPt = 25;
     // 2D
     vector<TH2D*> hist_xBvsQ2_binned(nbin_xQ2);
+    vector<TH2D*> hist_xBvsQ2_new_binned(18); // new grid
     vector<TH2D*> hist_zvsPt_binned(nbin_zPt);
     // xQ2 bins
     vector<vector<double>> vec_kaonp_phih_2d(nbin_xQ2);
@@ -1114,6 +1141,8 @@ void rgc_analysis_1D(const char* period, const char* target) {
         hist_Phi_h_plus_binzPt[i] = new TH1D(Form("hist_Phi_h_plus_binzPt_%d", i+1), Form("#Phi_{h} for bin (%d, z-P_{hT}) | spin +| pion+; #Phi_{h} [Rad]; count", i+1), 50, -TMath::Pi(), TMath::Pi());
         hist_Phi_h_minus_binzPt[i] = new TH1D(Form("hist_Phi_h_minus_binzPt_%d", i+1), Form("#Phi_{h} for bin (%d, z-P_{hT}) | spin - | pion+; #Phi_{h} [Rad]; count", i+1), 50, -TMath::Pi(), TMath::Pi());
     }
+    for(int i = 0; i < 18; i++) hist_xBvsQ2_new_binned[i] = new TH2D(Form("hist_xBvsQ2_new_bin%d", i+1), Form("x_{B} vs Q^{2} for bin (%d, x_{B}-Q^{2}) | pion+; x_{B}; Q^{2} [GeV^{2}]", i+1), 120, 0, 0.8, 120, 1, 11);
+    
 
     //
     double bin_z_plot[] = {0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0};
@@ -1165,6 +1194,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
                 double beta2 = kaonp_beta*kaonp_beta;
                 kaonp_m = sqrt((ph2)*(1-beta2)/beta2);
                 double index_xQ2 = getBinIndex_xQ2(kaonp_xB, kaonp_Q2); 
+                double index_xQ2_new = getBinIndex_xQ2dep(kaonp_xB, kaonp_Q2);
                 double index_zPt = getBinIndex_zPt(kaonp_z, kaonp_PhT);
                 proton_spin = +1;
                 if(kaonp_Pol < 0) proton_spin = -1;
@@ -1172,6 +1202,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
                 C_LSA_TSA = kaonp_sintheta * (sqrt(2*kaonp_epsilon*(1+kaonp_epsilon))/kaonp_epsilon);
                 //if (index_xQ2 != 15) continue;
                 //
+                if(index_xQ2_new >= 0) hist_xBvsQ2_new_binned[index_xQ2_new-1]->Fill(kaonp_xB, kaonp_Q2);
                 if(index_xQ2 >= 0) {
                     hist_xBvsQ2_binned[index_xQ2-1]->Fill(kaonp_xB, kaonp_Q2);
                     vec_kaonp_phih_2d[index_xQ2-1].push_back(kaonp_Phi_h);
@@ -1690,12 +1721,64 @@ void rgc_analysis_1D(const char* period, const char* target) {
     c_bin_xQ2_Qdep->Update();
     c_bin_xQ2_Qdep->Write();
 
+    // =============== new
+    TCanvas *c_bin_xQ2_Q2_last = new TCanvas("Q2_vs_xB_Bin_last", "Q^{2} vs x_{B} bin", 800, 700);
 
+    c_bin_xQ2_Q2_last->SetLogz();
+    kp_Q2VsXb.Draw("COLZ");
+
+    vector<TPolyLine*> rectangles3;
+    vector<TText*> labels3;
+
+    int bin_index3 = 1;
+
+    for (int ix = 0; ix < 5; ++ix) {
+
+        for (size_t iq = 0; iq < binning_Q2_for_xB_last[ix].size(); ++iq) {
+
+            double Q2min = binning_Q2_for_xB_last[ix][iq][0];
+            double Q2max = binning_Q2_for_xB_last[ix][iq][1];
+
+            double xBmin = bin_xB_last[ix][0];
+            double xBmax = bin_xB_last[ix][1];
+
+            double Q2[5] = {
+                Q2min, Q2max, Q2max, Q2min, Q2min
+            };
+
+            double xB[5] = {
+                xBmin, xBmin, xBmax, xBmax, xBmin
+            };
+
+            TPolyLine *rect = new TPolyLine(5, xB, Q2);
+            rect->SetLineColor(kBlack);
+            rect->SetLineWidth(2);
+            rect->Draw("same");
+            rectangles3.push_back(rect);
+
+            double Q2_center = 0.5 * (Q2min + Q2max);
+            double xB_center = 0.5 * (xBmin + xBmax);
+
+            TText *label = new TText(
+                xB_center, Q2_center, Form("%d", bin_index3++)
+            );
+
+            label->SetTextAlign(22);
+            label->SetTextSize(0.03);
+            label->SetTextColor(kRed+1);
+            label->Draw("same");
+            labels3.push_back(label);
+        }
+    }
+
+    c_bin_xQ2_Q2_last->Update();
+    c_bin_xQ2_Q2_last->Write();
 
     //
 
 
     for(int i = 0; i < nbin_xQ2; i++) hist_xBvsQ2_binned[i]->Write();
+    for(int i = 0; i < 18; i++) hist_xBvsQ2_new_binned[i]->Write();
 
 
     dir_zPt->cd();
@@ -1738,6 +1821,47 @@ void rgc_analysis_1D(const char* period, const char* target) {
     c_bin_zPt->Update();
     c_bin_zPt->Write();
 
+
+
+    TCanvas *c_bin_zPt_new = new TCanvas("z_vs_Pt_new_Bin", "z vs P_{hT} bin", 800, 700);
+    c_bin_zPt_new->SetLogz();
+    kp_PhTvsZ.Draw("COLZ");
+
+    vector<TPolyLine*> gridLines_zp_new;
+    vector<TText*> labels_zp_new;
+
+    int bin_index_zp_new = 1;
+
+    // Loop generale
+    for (int iz = 0; iz < 4; ++iz) {
+        for (size_t ip = 0; ip < binning_z_for_Pt_4D[iz].size(); ++ip) {
+
+            double Pt[5] = {bin_Pt_4D[iz][0], bin_Pt_4D[iz][1], bin_Pt_4D[iz][1], bin_Pt_4D[iz][0], bin_Pt_4D[iz][0]};
+            double z[5] = {binning_z_for_Pt_4D[iz][ip][0], binning_z_for_Pt_4D[iz][ip][0], binning_z_for_Pt_4D[iz][ip][1], binning_z_for_Pt_4D[iz][ip][1], binning_z_for_Pt_4D[iz][ip][0]};
+
+            // Rettangolo
+            TPolyLine *rect_zp = new TPolyLine(5, z, Pt);
+            rect_zp->SetLineWidth(2);
+            rect_zp->SetLineColor(kBlack);
+            rect_zp->Draw("same");
+            gridLines_zp_new.push_back(rect_zp);
+
+            // Centro geometrico (utile se log-scale in Pt)
+            double Pt_center = 0.5 * (bin_Pt_4D[iz][0] + bin_Pt_4D[iz][1]);
+            double z_center = 0.5 * (binning_z_for_Pt_4D[iz][ip][0] + binning_z_for_Pt_4D[iz][ip][1]);
+
+            TText *label = new TText(z_center, Pt_center, Form("%d", bin_index_zp_new++));
+            label->SetTextAlign(22);
+            label->SetTextSize(0.03);
+            label->SetTextColor(kRed+1);
+            label->Draw("same");
+            labels_zp_new.push_back(label);
+        }
+    }
+
+    c_bin_zPt_new->Update();
+    c_bin_zPt_new->Write();
+
     for(int i = 0; i < nbin_zPt; i++) hist_zvsPt_binned[i]->Write();
 
 
@@ -1770,6 +1894,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     vector<double> cov_AUU_cos2Phi_AUL_sin2Phi_zPt(nbin_zPt,std::numeric_limits<double>::quiet_NaN());
     
     // ASYMMETRIES xQ2
+
     for (int x = 0; x < nbin_xQ2; x++){ 
         ROOT::Minuit2::Minuit2Minimizer minimizer(ROOT::Minuit2::kMigrad);
         //ROOT::Math::Functor MLE([&](const double* p) {return AUL_loglike(p, vec_kaonp_phih_2d[x], vec_kaonp_spin_2d[x], vec_kaonp_eps_2d[x], vec_kaonp_pol_2d[x], vec_kaonp_sintheta_2d[x], false);}, 2);
@@ -3513,6 +3638,7 @@ void rgc_analysis_1D(const char* period, const char* target) {
     c_All2D_xB_cos->SaveAs(Form("PDF_directory/%s_ALL_cos_vs_xB_2d.pdf", period));
     c_Alu2D_xB_sin->SaveAs(Form("PDF_directory/%s_ALU_sin_vs_xB_2d.pdf", period));
     //treeKaonP.Write("", TObject::kOverwrite);
+
     csvFile.close();
     csvFile_xQ2.close();
     outFile.Close();

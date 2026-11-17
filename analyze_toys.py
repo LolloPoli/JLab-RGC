@@ -31,7 +31,7 @@ os.makedirs(outdir, exist_ok=True)
 
 SYS_COMPONENTS = ["Acc_sys", "PID_sys", "Purity_sys", "Bin_mig_sys"]
 ENABLED_COMPONENTS = {
-    "Acc_sys":      True,
+    "Acc_sys":      False,  
     "PID_sys":      True,
     "Purity_sys":   True,
     "Bin_mig_sys":  True,  
